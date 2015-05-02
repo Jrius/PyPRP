@@ -17,20 +17,19 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_AbsClasses import *
 import prp_Config, prp_HexDump
 from prp_RefParser import *
+from prp_Types import *
+from prp_DXTConv import *
+from prp_HexDump import *
+from prp_GeomClasses import *
+from prp_Functions import *
+from prp_ConvexHull import *
+from prp_VolumeIsect import *
+from prp_AlcScript import *
 
 
 import prp_Config, prp_HexDump
@@ -183,7 +182,8 @@ class plViewFaceModifier(plSingleModifier):
         objscript = AlcScript.objects.Find(obj.name)
         cmdlist = FindInDict(objscript,"visual.sprite.flags",None)
         try:
-            p = obj.getProperty("sprite_flags")
+            #p = obj.getProperty("sprite_flags")
+            p = obj["sprite_flags"]
             BVData = alcAscii2Hex(str(p.getData()),4)
         except:
             if type(cmdlist) == list:
@@ -202,14 +202,14 @@ class plViewFaceModifier(plSingleModifier):
         # get the matrices
         LocalToWorld=hsMatrix44()
         m=getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         LocalToWorld.set(m)
         self.fOrigLocalToParent = LocalToWorld
 
         WorldToLocal=hsMatrix44()
         m=getMatrix(obj)
         m.invert()
-        m.transpose()
+        #m.transpose()
         WorldToLocal.set(m)
         self.fOrigParentToLocal = WorldToLocal
 
@@ -473,7 +473,7 @@ class plSoftVolumeSimple(plSoftVolume):
             self.fVolume = PrpVolumeIsect(vitype,self.getVersion())
             if self.fVolume.data == None:
                 size=size-(stream.tell()-st)
-                self.rawdata=cStringIO.StringIO()
+                self.rawdata=io.BytesIO()
                 self.rawdata.write(stream.read(size))
                 self.rawdata.seek(0)
             else:
@@ -509,7 +509,7 @@ class plSoftVolumeSimple(plSoftVolume):
         self.fOutsideStrength = float(outstr)
 
         isect = str(FindInDict(objscript,"type", "convex"))
-        print "%s has volume type %s" % (self.Key.name, isect)
+        print("%s has volume type %s" % (self.Key.name, isect))
 
         if (isect.lower() == "convex"):
             self.fVolume = PrpVolumeIsect(0x02F5,self.getVersion())
@@ -554,7 +554,7 @@ class plSoftVolumeComplex(plSoftVolume):
                 if softVolume != None:
                     propertyString += softVolume.data.getPropertyString()
                 else:
-                    raise RuntimeError, "Could not find soft volume object %s" % str(svRef.Key.name)
+                    raise RuntimeError("Could not find soft volume object %s" % str(svRef.Key.name))
             propertyString += ")"
             return propertyString
         return None
@@ -871,11 +871,3 @@ class plRelevanceRegion(plObjInterface):
         plObjInterface.write(self,stream)
         self.fRegion.write(stream)
 
-from prp_Types import *
-from prp_DXTConv import *
-from prp_HexDump import *
-from prp_GeomClasses import *
-from prp_Functions import *
-from prp_ConvexHull import *
-from prp_VolumeIsect import *
-from prp_AlcScript import *

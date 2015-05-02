@@ -17,23 +17,15 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Sound
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5
+from bpy import *
+import hashlib
 import random
-import cStringIO
+import io
 import copy
-import Image
+import PIL.Image
 import math
 import struct
-import StringIO
+import io
 import os
 import pickle
 from os.path import *
@@ -74,7 +66,7 @@ class plAudioInterface(plObjInterface):             #Type 0x11
         self.fAudible.write(stream)
 
     def dump(self):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
     def _Export(page,obj,scnobj,name,SceneNodeRef,softVolumeParser, MultiSounds=[]):
         # Get this object's AlcScript section
@@ -87,20 +79,20 @@ class plAudioInterface(plObjInterface):             #Type 0x11
 
         audioIface = plAudioInterface.FindCreate(page, name) #Create the audio Interface
         if audioIface == None:
-            raise "ERROR: AudioInterface for %s not found!" %(str(scnobj.data.Key))
+            raise RuntimeError("ERROR: AudioInterface for %s not found!" %(str(scnobj.data.Key)))
             return
 
         audioIface.data.parentref = scnobj.data.getRef()
         if MultiSounds:
-            print MultiSounds
+            print(MultiSounds)
             aud = plWinAudible.FindCreate(page, name)
             aud.data.fSceneObj = SceneNodeRef
             for WSound in MultiSounds:
-                WSoundScript = WSound[(WSound.keys()[0])]
+                WSoundScript = WSound[(list(WSound.keys())[0])]
                 if string.lower(FindInDict(WSoundScript, "sound.buffer", "stream")) == "static":
-                    win32snd = plWin32StaticSound.FindCreate(page, (WSound.keys()[0]))
+                    win32snd = plWin32StaticSound.FindCreate(page, (list(WSound.keys())[0]))
                 else:
-                    win32snd = plWin32StreamingSound.FindCreate(page, (WSound.keys()[0]))
+                    win32snd = plWin32StreamingSound.FindCreate(page, (list(WSound.keys())[0]))
                 win32snd.data.exportObj(obj, softVolumeParser,RndSndName=WSoundScript)
                 aud.data.appendSound(win32snd.data.getRef())
             
@@ -147,7 +139,7 @@ class plAudible(hsKeyedObject):                             #Type 0x12
         hsKeyedObject.write(self, stream)
 
     def dump(self):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
 class plWinAudible(plAudible):
     def __init__(self,parent,name="unnamed",type=0x0014):
@@ -174,7 +166,7 @@ class plWinAudible(plAudible):
         self.fSceneObj.write(stream)
 
     def dump(self):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
     #######################
     # Interface Functions #
@@ -214,7 +206,7 @@ class plWAVHeader:
         stream.Write16(self.fBitsPerSample)
 
     def makeFromInput(self, filename):
-        wavfile = file(filename,'rb')
+        wavfile = open(filename,'rb')
         try:
             assert wavfile.read(4) == 'RIFF'
             wavfile.read(4)
@@ -222,7 +214,7 @@ class plWAVHeader:
             assert wavfile.read(4) == 'fmt '
             wavfile.read(4)
         except:
-            raise IOError, "The file %s is not a valid WAV file" % filename
+            raise IOError("The file %s is not a valid WAV file" % filename)
         #We're all good to go! It must be a valid .wav file!
 
         ## Using the struct.unpack here because we're working on a wave file,
@@ -236,7 +228,7 @@ class plWAVHeader:
 
 
     def makeFromOGG(self, oggFileName):
-        oggfile = file(oggFileName,'rb')
+        oggfile = open(oggFileName,'rb')
         try:
             # OGG packet header
             assert oggfile.read(4) == 'OggS'
@@ -260,7 +252,7 @@ class plWAVHeader:
             vorbisVersion = struct.unpack("<I", oggfile.read(4))[0]
             assert vorbisVersion == 0 
         except:
-            raise IOError, "The file %s was not a valid OGG file" % oggFileName
+            raise IOError("The file %s was not a valid OGG file" % oggFileName)
 
         # It is a valid OGG VORBIS file!
         self.fNumChannels = struct.unpack("<B", oggfile.read(1))[0]
@@ -326,7 +318,7 @@ class plSoundBuffer(hsKeyedObject):                     #Type 0x29
                 stream.write(self.fData[0])
 
     def dump(self,buf):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
     #######################
     # Interface Functions #
@@ -340,10 +332,10 @@ class plSoundBuffer(hsKeyedObject):                     #Type 0x29
         else:
             isWAVFile = False
             sname = filename
-        self.fFileName.set(Blender.sys.basename(sname))
+        self.fFileName.set(os.path.basename(sname))
         #DEBUG
-        print "  Sound source file: ", filename
-        print "  In-game file: ", self.fFileName.name
+        print("  Sound source file: ", filename)
+        print("  In-game file: ", self.fFileName.name)
 
         self.fFlags |= plSoundBuffer.Flags["kIsExternal"]
         self.fFlags |= plSoundBuffer.Flags["kAlwaysExternal"]
@@ -498,22 +490,22 @@ class plFadeParams:
         length = FindInDict(script, "length", None)
         if length != None:
             self.fLengthInSecs = float(length)
-            print "    plFadeParams: length: %f" % float(length)
+            print("    plFadeParams: length: %f" % float(length))
 
         start = FindInDict(script, "start", None)
         if start != None:
             self.fVolStart = float(start)
-            print "    plFadeParams: start: %f" % float(start)
+            print("    plFadeParams: start: %f" % float(start))
 
         end = FindInDict(script, "end", None)
         if end != None:
             self.fVolEnd = float(end)
-            print "    plFadeParams: end: %f" % float(end)
+            print("    plFadeParams: end: %f" % float(end))
 
         stop = FindInDict(script, "stop", None)
         if stop != None:
             self.fStopWhenDone = bool(stop)
-            print "    plFadeParams: stop: %s" % stop
+            print("    plFadeParams: stop: %s" % stop)
 
         type = FindInDict(script, "type", "linear")
         if type in plFadeParams.ScriptType:
@@ -632,7 +624,7 @@ class plSound(plSynchedObject):
         self.fSoftOcclusionRegion.write(stream)
 
     def dump(self,buf):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
 
 class plWin32Sound(plSound):
@@ -677,19 +669,19 @@ class plWin32Sound(plSound):
 
 
     def dump(self,buf):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
     def getFullFileName(self, filename):
-        fullFileName = Blender.sys.expandpath(filename)
-        if not Blender.sys.exists(fullFileName):
+        fullFileName = os.path.expandpath(filename)
+        if not os.path.exists(fullFileName):
             # Try the sound directory
-            baseFilename = Blender.sys.basename(filename)
-            fullFileName = Blender.Get('soundsdir') + Blender.sys.sep + baseFilename
-            if not Blender.sys.exists(fullFileName):
+            baseFilename = os.path.basename(filename)
+            fullFileName = bpy.types.UserPreferencesFilePaths.sound_directory + "/" + baseFilename
+            if not os.path.exists(fullFileName):
                 # Look in the same directory as the .blend file
-                blendfile = Blender.Get('filename')
-                fullFileName = Blender.sys.dirname(blendfile) + Blender.sys.sep + baseFilename
-                if not Blender.sys.exists(fullFileName):
+                blendfile = bpy.data.filepath
+                fullFileName = os.path.dirname(blendfile) + "/" + baseFilename
+                if not os.path.exists(fullFileName):
                     fullFileName = None
         return fullFileName
 
@@ -702,7 +694,7 @@ class plWin32Sound(plSound):
         if RndSndName:
             objscript = RndSndName
         else:
-            objscript = AlcScript.objects.Find(obj.getName())
+            objscript = AlcScript.objects.Find(obj.name)
 
         flags = FindInDict(objscript,"sound.flags",[])
         if type(flags) == list:
@@ -729,10 +721,10 @@ class plWin32Sound(plSound):
         wavobj = None
         fullsname = None
         try:
-            wavobj = Blender.Sound.Get(sname)
+            wavobj = bpy.data.sounds.get(sname)
         except:
             try:
-                wavobj = Blender.Sound.Get(sname+".wav")
+                wavobj = bpy.data.sounds.get(sname+".wav")
             except:
                 wavobj = None
 
@@ -742,7 +734,7 @@ class plWin32Sound(plSound):
             wavobj.setCurrent() #Make it the current sound object... just because we can :P
             fullsname = self.getFullFileName(wavobj.getFilename())
             if fullsname == None:
-                print "  Invalid sound block \"%s\", fall back on alternate method" % wavobj.getFilename()
+                print("  Invalid sound block \"%s\", fall back on alternate method" % wavobj.getFilename())
                 wavobj = None
 
         if wavobj == None:
@@ -750,7 +742,7 @@ class plWin32Sound(plSound):
             if fullsname == None:
                 fullsname = self.getFullFileName(sname + ".ogg")
                 if fullsname == None:
-                    raise ValueError, "Cannot locate any sound named \"%s\"" % sname
+                    raise ValueError("Cannot locate any sound named \"%s\"" % sname)
 
 
         #Export a SoundBuffer
@@ -822,7 +814,7 @@ class plWin32StaticSound(plWin32Sound):
         plWin32Sound.write(self, stream)
 
     def dump(self,buf):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
     def exportObj(self, obj, softVolumeParser,RndSndName=''):
         plWin32Sound.exportObj(self, obj, softVolumeParser,RndSndName)
@@ -847,7 +839,7 @@ class plWin32StreamingSound(plWin32Sound):
         plWin32Sound.write(self, stream)
 
     def dump(self,buf):
-        print "Dump() deprecated on Audio and Sound classes"
+        print("Dump() deprecated on Audio and Sound classes")
 
     def exportObj(self, obj, softVolumeParser,RndSndName=''):
         plWin32Sound.exportObj(self, obj, softVolumeParser,RndSndName)

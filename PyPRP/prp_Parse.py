@@ -33,7 +33,7 @@ def parse_prp(filename):
     print("Parsing %s ..." % filename)
     basepath = dirname(filename)
     prp = PrpFile()
-    f=file(filename,"rb")
+    f=open(filename,"rb")
     prp.read(f)
     f.close()
     del prp

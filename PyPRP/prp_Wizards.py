@@ -19,17 +19,8 @@
 
 # Help library
 
-try:
-    import Blender
-    import bpy
-    try:
-        from Blender import NMesh, Object, Mathutils
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import random, md5,math, binascii, struct, textwrap
+from bpy import *
+import random, hashlib, math, binascii, struct, textwrap
 
 from prp_AlcScript import *
 from prp_SpecialObjs import *
@@ -40,6 +31,10 @@ from prp_LogicClasses import plAvLadderMod
 from prp_CamClasses import plCameraBrain1_Circle
 from prp_Messages import plArmatureEffectStateMsg
 from prp_GeomClasses import Vertex
+
+
+# whatever, broken
+
 
 def Wizard_BookUpgrade(RemoveOld = False):
     age = { \
@@ -54,22 +49,22 @@ def Wizard_BookUpgrade(RemoveOld = False):
 
     oldbookobjects = []
 
-    scene = Blender.Scene.GetCurrent()
+    scene = bpy.context.scene
     for obj in list(scene.objects):
         # if this object has a "book" property, ignore it
         try:
             p=obj.getProperty("book")
-            print " Found Book on object %s"%(obj.name)
+            print(" Found Book on object %s"%(obj.name))
             # If we haven't crashed, we have a book type
 
             try:
                 # Now extract the properties
                 p = obj.getProperty('SequencePrefix')
-                print p
+                print(p)
                 age["sequenceprefix"] = getStrIntPropertyOrDefault(obj,"SequencePrefix",100)
 
                 p = obj.getProperty('StartDateTime')
-                print p
+                print(p)
                 time = getTextPropertyOrDefault(obj,"StartDateTime",0)
 
                 try:
@@ -78,29 +73,29 @@ def Wizard_BookUpgrade(RemoveOld = False):
                     age["startdatetime"] = 0
 
                 p = obj.getProperty('DayLength')
-                print p
+                print(p)
                 age["daylength"] = float(getTextPropertyOrDefault(obj,"DayLength",24.0))
 
                 p = obj.getProperty('MaxCapacity')
-                print p
+                print(p)
                 age["maxcapacity"] = getStrIntPropertyOrDefault(obj,"MaxCapacity",150)
 
                 p = obj.getProperty('LingerTime')
-                print p
+                print(p)
                 age["lingertime"] = getStrIntPropertyOrDefault(obj,"LingerTime",180)
 
                 config["agesdlhook"] = bool(getBoolPropertyOrDefault(obj,"AgeSDLHook",False))
 
                 oldbookobjects.append(obj)
-            except (AttributeError, RuntimeError),details:
-                print "Exception: ",details
-        except (AttributeError, RuntimeError),detail:
+            except (AttributeError, RuntimeError) as details:
+                print("Exception: ",details)
+        except (AttributeError, RuntimeError) as detail:
             pass
 
         # if this object has a "page" property, ignore it too...
         try:
             p=obj.getProperty("page")
-            print " Found Page on object %s"%(obj.name)
+            print(" Found Page on object %s"%(obj.name))
 
             # If we haven't crashed, we have a book type
             # Now extract the properties
@@ -114,14 +109,14 @@ def Wizard_BookUpgrade(RemoveOld = False):
 
             page["hide"] = getIntPropertyOrDefault(obj,"hide",0)
 
-            print "  Contents:",page
+            print("  Contents:",page)
             # And store this page...
             if index != -1 and index != -2:
                 pages[index] = page
 
             oldbookobjects.append(obj)
 
-        except (AttributeError, RuntimeError),details:
+        except (AttributeError, RuntimeError) as details:
             pass
 
     if len(pages) == 0:
@@ -132,13 +127,13 @@ def Wizard_BookUpgrade(RemoveOld = False):
 
     # First do the age block
     text += "age:\n"
-    for key in age.keys():
+    for key in list(age.keys()):
         text += "\t" + key +": " + str(age[key]) + "\n"
     text += "\n"
 
     # Next print the age.pages block
     text += "\tpages:\n"
-    pagekeys = pages.keys()
+    pagekeys = list(pages.keys())
     pagekeys.sort()
     for key in pagekeys:
         text += "\t\t- index: " + str(key) + "\n"
@@ -147,15 +142,15 @@ def Wizard_BookUpgrade(RemoveOld = False):
             text += "\t\t  hide: true\n"
         if pages[key]["type"] > 0:
             text += "\t\t  flags:\n"
-            for flag in alcBook.PageFlags.keys():
+            for flag in list(alcBook.PageFlags.keys()):
                 if pages[key]["type"] & alcBook.PageFlags[flag]:
                     text += "\t\t\t- " + flag + "\n"
     text += "\n"
 
     # And finish with the config block
-    if len(config.keys()) > 0:
+    if len(list(config.keys())) > 0:
         text += "config:\n"
-        for key in config.keys():
+        for key in list(config.keys()):
             text += "\t" + key +": " + str(config[key]) + "\n"
 
 
@@ -169,7 +164,7 @@ def Wizard_BookUpgrade(RemoveOld = False):
 
 
 def Wizard_property_update():
-    l = Blender.Object.Get()
+    l = bpy.data.objects
     AlcScript.objects = AlcScript()
     numProps = 0
     numObjects = 0
@@ -190,13 +185,13 @@ def Wizard_property_update():
             except (AttributeError, RuntimeError):
                 pass
             name = str(obj.name)
-            print "Object:",name
-            obj_type=obj.getType()
+            print("Object:",name)
+            obj_type=obj.type
 
             # Change alctype => type
             try:
                 p=obj.getProperty("alctype")
-                print p
+                print(p)
                 numProps += 1
                 alctype=str(p.getData())
                 if alctype == "svconvex":
@@ -210,7 +205,7 @@ def Wizard_property_update():
             swimstyle = None
             try:
                 p=obj.getProperty("prpregion")
-                print p
+                print(p)
                 numProps += 1
                 regiontype=str(p.getData())
                 obj.removeProperty(p)
@@ -254,7 +249,7 @@ def Wizard_property_update():
             # Check whether the object should have bounds
             try:
                 p = obj.getProperty("col_type")
-                print p
+                print(p)
                 numProps += 1
                 col_type=int(p.getData())
                 obj.removeProperty(p)
@@ -275,7 +270,7 @@ def Wizard_property_update():
             # Check whether the object should be dynamic
             try:
                 p = obj.getProperty("mass")
-                print p
+                print(p)
                 numProps += 1
                 mass=float(p.getData())
                 obj.removeProperty(p)
@@ -292,7 +287,7 @@ def Wizard_property_update():
             # Translate col_flags0 values
             try:
                 p = obj.getProperty("col_flags0")
-                print p
+                print(p)
                 numProps += 1
                 col_flags0=alcAscii2Hex(str(p.getData()),2)
                 obj.removeProperty(p)
@@ -315,7 +310,7 @@ def Wizard_property_update():
             # (just delete the property; this is automatically set by other code)
             try:
                 p = obj.getProperty("col_flags1")
-                print p
+                print(p)
                 numProps += 1
                 obj.removeProperty(p)
             except (AttributeError, RuntimeError):
@@ -325,7 +320,7 @@ def Wizard_property_update():
             # (just delete the property; this is automatically set by other code)
             try:
                 p = obj.getProperty("col_flags2")
-                print p
+                print(p)
                 numProps += 1
                 obj.removeProperty(p)
             except (AttributeError, RuntimeError):
@@ -335,7 +330,7 @@ def Wizard_property_update():
             # (just delete the property; this is replaced by two bool flags that are always false)
             try:
                 p = obj.getProperty("col_flags3")
-                print p
+                print(p)
                 numProps += 1
                 obj.removeProperty(p)
             except (AttributeError, RuntimeError):
@@ -344,7 +339,7 @@ def Wizard_property_update():
             # Translate col_flags4 values
             try:
                 p = obj.getProperty("col_flags4")
-                print p
+                print(p)
                 numProps += 1
                 col_flags4=alcAscii2Hex(str(p.getData()),4)
                 obj.removeProperty(p)
@@ -359,14 +354,14 @@ def Wizard_property_update():
             col_flags5=None
             try:
                 p = obj.getProperty("col_flags5")
-                print p
+                print(p)
                 numProps += 1
                 col_flags5=alcAscii2Hex(str(p.getData()),4)
                 obj.removeProperty(p)
             except (AttributeError, RuntimeError):
                 pass
             except (TypeError):
-                raise RuntimeError, "The col_flags5 property in object %s is not a string.  Please correct this." % (obj.name)
+                raise RuntimeError("The col_flags5 property in object %s is not a string.  Please correct this." % (obj.name))
             if col_flags5 != None:
                 if (col_flags5 & plPhysical.plLOSDB["kLOSDBCameraBlockers"] == 0):
                     # User has explicitly disabled camera blocking
@@ -385,7 +380,7 @@ def Wizard_property_update():
             # Check for clickable objects
             try:
                 p = obj.getProperty("clickfile")
-                print p
+                print(p)
                 numProps += 1
                 clickfile = str(p.getData())
                 obj.removeProperty(p)
@@ -405,7 +400,7 @@ def Wizard_property_update():
                 # Determine whether it is a bottom or top region
                 try:
                     p=obj.getProperty("bottomFlag")
-                    print p
+                    print(p)
                     numProps += 1
                     bottomFlag=alcAscii2Hex(str(p.getData()),1)
                     obj.removeProperty(p)
@@ -413,7 +408,7 @@ def Wizard_property_update():
                     bottomFlag = True
                 try:
                     p=obj.getProperty("climbOffset")
-                    print p
+                    print(p)
                     numProps += 1
                     type=int(p.getData())
                     obj.removeProperty(p)
@@ -422,7 +417,7 @@ def Wizard_property_update():
                 # Get the number of loops
                 try:
                     p=obj.getProperty("climbHeight")
-                    print p
+                    print(p)
                     numProps += 1
                     climbHeight=int(p.getData())
                     obj.removeProperty(p)
@@ -457,7 +452,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("camera")
                     cameraName = str(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -469,7 +464,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("setDefCam")
                     setDefCam = bool(str(p.getData()).lower() == "true")
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -492,13 +487,13 @@ def Wizard_property_update():
                         footstepsound = alcAscii2Hex(str(p.getData()),2)
                     else:
                         footstepsound = int(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
                     footstepsound = 1
                 surface = "dirt"
-                for surfacePair in plArmatureEffectStateMsg.ScriptNames.items():
+                for surfacePair in list(plArmatureEffectStateMsg.ScriptNames.items()):
                     if surfacePair[1] == footstepsound:
                         surface = surfacePair[0]
                         break
@@ -519,7 +514,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("currentdummy")
                     centerpoint = str(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -527,7 +522,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("Centerpoint")
                     centerpoint = str(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -538,7 +533,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f2")
                         neardist = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                         StoreInDict(objscript,"region.swim.straight.neardist",neardist)
@@ -547,7 +542,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f3")
                         nearvel = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -555,7 +550,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("Y-speed")
                         nearvel = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -565,7 +560,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f4")
                         fardist = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                         StoreInDict(objscript,"region.swim.straight.fardist",fardist)
@@ -574,7 +569,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f5")
                         farvel = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -582,7 +577,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("Y+speed")
                         farvel = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -595,7 +590,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f1")
                         rotation = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -603,7 +598,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("Rotation")
                         rotation = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -613,7 +608,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f2")
                         neardist = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                         StoreInDict(objscript,"region.swim.circular.pullneardist",neardist)
@@ -622,7 +617,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f3")
                         nearvel = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                         StoreInDict(objscript,"region.swim.circular.pullnearspeed",nearvel)
@@ -631,7 +626,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f4")
                         fardist = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                         StoreInDict(objscript,"region.swim.circular.pullfardist",fardist)
@@ -640,7 +635,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("swimsfc_f5")
                         farvel = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -648,7 +643,7 @@ def Wizard_property_update():
                     try:
                         p = obj.getProperty("Attraction")
                         farvel = float(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                         obj.removeProperty(p)
                     except (AttributeError, RuntimeError):
@@ -664,7 +659,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("cambrain")
                     cambrain = str(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -673,7 +668,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("POA_X")
                     POA_X = float(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -681,7 +676,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("POA_Y")
                     POA_Y = float(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -689,7 +684,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("POA_Z")
                     POA_Z = float(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -699,21 +694,21 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("Circle_flags")
                     Circle_flags = int(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
                     Circle_flags = None
                 if Circle_flags != None:
                     flaglist = []
-                    for flag in plCameraBrain1_Circle.ScriptCircleFlags.keys():
+                    for flag in list(plCameraBrain1_Circle.ScriptCircleFlags.keys()):
                         if Circle_flags & plCameraBrain1_Circle.ScriptCircleFlags[flag] > 0:
                             flaglist.append(flag)
                     StoreInDict(objscript,"camera.brain.circleflags",flaglist)
                 try:
                     p = obj.getProperty("AvCam_X")
                     AvCam_X = float(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -721,7 +716,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("AvCam_Y")
                     AvCam_Y = float(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -729,7 +724,7 @@ def Wizard_property_update():
                 try:
                     p = obj.getProperty("AvCam_Z")
                     AvCam_Z = float(p.getData())
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -739,21 +734,21 @@ def Wizard_property_update():
                 # Just delete the FpCam_* properties - they are not used
                 try:
                     p = obj.getProperty("FpCam_X")
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
                     pass
                 try:
                     p = obj.getProperty("FpCam_Y")
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
                     pass
                 try:
                     p = obj.getProperty("FpCam_Z")
-                    print p
+                    print(p)
                     numProps += 1
                     obj.removeProperty(p)
                 except (AttributeError, RuntimeError):
@@ -767,7 +762,7 @@ def Wizard_property_update():
                 # settings, set energy to 0.5
                 lamp = obj.data
                 lamp.energy = 0.5
-                if lamp.type == Blender.Lamp.Types["Spot"] or lamp.type == Blender.Lamp.Types["Lamp"]:
+                if lamp.type == "POINT" or lamp.type == "LAMP":
                     # To keep the effects of quadratic attenuation the same,
                     # set the quad and sphere modes
                     lamp.mode |= Blender.Lamp.Modes["Quad"]
@@ -785,7 +780,7 @@ def Wizard_property_update():
                     try:
                         p=obj.getProperty("lights000")
                         lightName=str(p.getData())
-                        print p
+                        print(p)
                         numProps += 1
                     except (AttributeError, RuntimeError):
                         pass
@@ -804,7 +799,7 @@ def Wizard_property_update():
 
         # Loop through lit meshes, now that we know how many lights there are
         for obj in litObjects:
-            print "Lit Object: ",obj.name
+            print("Lit Object: ",obj.name)
             lightNames = []
             # Determine which lights affect this object
             for lint in range(1000):
@@ -812,26 +807,26 @@ def Wizard_property_update():
                 lightName=None
                 try:
                     p=obj.getProperty(cstrl)
-                    print p
+                    print(p)
                     lightName=str(p.getData())
                 except (AttributeError, RuntimeError):
                     break
                 if lightName != None:
-                    if lights.has_key(lightName):
+                    if lightName in lights:
                         obj.removeProperty(p)
                         lightNames.append(lightName)
                     else:
-                        raise RuntimeError, "Object %s refers to non-existent light \"%s\"" % (obj.name,lightName)
+                        raise RuntimeError("Object %s refers to non-existent light \"%s\"" % (obj.name,lightName))
             # Decide if a light group is needed
             if len(lightNames) < len(lights):
                 # Create the light group
-                print "Creating light group for object",obj.name
+                print("Creating light group for object",obj.name)
                 mesh = Blender.Mesh.Get(obj.data.name)
                 mat = mesh.materials[0]
                 lightGroup = Blender.Group.New(str(mat.name))
                 for lightName in lightNames:
                     lightObj = lights[lightName]
-                    print "  Adding light",lightName,"to group"
+                    print("  Adding light",lightName,"to group")
                     lightGroup.objects.link(lightObj)
                 # Assign the group to the material
                 mat.lightGroup = lightGroup
@@ -876,7 +871,7 @@ def Wizard_property_update():
                     foundClickRegion = clickregion.name
                     break
             if foundClickRegion == None:
-                raise RuntimeError, "Clickable object %s is not inside any click region" % name
+                raise RuntimeError("Clickable object %s is not inside any click region" % name)
             objscript = AlcScript.objects.FindOrCreate(obj.name)
             # Add the clickregion name
             StoreInDict(objscript,"quickscript.simpleclick.region",foundClickRegion)
@@ -889,12 +884,12 @@ def Wizard_property_update():
             blendtext.write(alctext)
             AlcScript.objects = None
 
-    except (RuntimeError),details:
+    except (RuntimeError) as details:
         resultMessage = '*** ABORTED: %s' % (details)
 
     if resultMessage == None:
         resultMessage = 'Converted %d properties for %d objects.' % (numProps,numObjects)
-    print resultMessage
+    print(resultMessage)
     Blender.Draw.PupMenu(resultMessage)
 
 
@@ -906,10 +901,10 @@ def Wizard_mattex_create():
     texturesChecked = {}
     for obj in l:
         # DEBUG
-        print "Object:",obj.name
+        print("Object:",obj.name)
         if obj.type == 'Mesh':
             #DEBUG
-            print " is mesh"
+            print(" is mesh")
             mesh = Blender.Mesh.Get(obj.data.name)
             try:
                 p = obj.getProperty("type")
@@ -941,7 +936,7 @@ def Wizard_mattex_create():
                     mesh.materials = []
                     obj.colbits = 0x00
                     obj.activeMaterial = 0
-                    print "  Deleted null material"
+                    print("  Deleted null material")
                 else:
                     # Swap out the old array for the new one
                     newMaterials.append(mat)
@@ -954,7 +949,7 @@ def Wizard_mattex_create():
             # Check for existence of materials for the mesh
             if mat != None:
                 # DEBUG
-                print " has material", mat
+                print(" has material", mat)
                 # Unset shadow buf mode to prevent unwanted shadow casters
                 mat.mode &= ~Blender.Material.Modes["SHADOWBUF"]
             elif type != "region" and type != "svconvex" and type != "collider" and type != "book" and type != "page":
@@ -968,10 +963,10 @@ def Wizard_mattex_create():
                 obj.colbits = 0x01
                 obj.activeMaterial = 1
                 #DEBUG
-                print "Created material",matName,"for object",obj.getName()
+                print("Created material",matName,"for object",obj.name)
             else:
                 #DEBUG
-                print " is type",type
+                print(" is type",type)
                 continue
 
             # Check for existence of UV coordinates on the face
@@ -994,15 +989,15 @@ def Wizard_mattex_create():
                                 break
                         if image != None:
                             try:
-                                newTex = Blender.Texture.Get(face.image.getName())
+                                newTex = Blender.Texture.Get(face.image.name)
                             except Exception:
                                 newTex = None
                             if (newTex == None):
-                                newTex = Blender.Texture.New(face.image.getName())
+                                newTex = Blender.Texture.New(face.image.name)
                                 newTex.setType('Image')
                                 newTex.setImage(face.image)
                                 #DEBUG
-                                print "Created texture",newTex.getName(),"for object",obj.getName()
+                                print("Created texture",newTex.name,"for object",obj.name)
                             mat.setTexture(0,newTex,Blender.Texture.TexCo.UV,Blender.Texture.MapTo.COL)
                             numTexCreated += 1
                     for tex in mat.getTextures():
@@ -1019,20 +1014,20 @@ def Wizard_mattex_create():
                                     parts = filename.split("\\")
                                 if len(parts) > 0:
                                     filename = parts[len(parts) - 1]
-                                print "  tex filename:",filename
+                                print("  tex filename:",filename)
                                 # Use INTERPOL to indicate compression
                                 if filename[0:10]=="noCompress":
                                     tex.tex.imageFlags &= ~Blender.Texture.ImageFlags["INTERPOL"]
                                     # DEBUG
-                                    print "  no compression"
+                                    print("  no compression")
                                 else:
                                     tex.tex.imageFlags |= Blender.Texture.ImageFlags["INTERPOL"]
                                     # DEBUG
-                                    print "  using compression"
+                                    print("  using compression")
 
                                 if filename[-4:]==".gif":
                                     useAlpha = 0
-                                elif texturesChecked.has_key(filename):
+                                elif filename in texturesChecked:
                                     useAlpha = texturesChecked[filename]
                                 else:
                                     # Detect whether it uses alpha
@@ -1051,11 +1046,11 @@ def Wizard_mattex_create():
                                     # Set USEALPHA to indicate presence of alpha
                                     tex.tex.imageFlags |= Blender.Texture.ImageFlags["USEALPHA"]
                                     # DEBUG
-                                    print "  has alpha"
+                                    print("  has alpha")
                                     break
 
     message = 'Added %d materials and %d textures.' % (numMatCreated,numTexCreated)
-    print message
+    print(message)
     Blender.Draw.PupMenu(message)
 
 
@@ -1268,15 +1263,15 @@ def Wizard_15_to_16_textransform():
             summary.append("%d textures not converted because converted values would be out of range" % len(nFailures))
         summary.append("(details on console)")
         
-        print "%d static textures converted" % len(nStatic)
+        print("%d static textures converted" % len(nStatic))
         for n in nStatic:
-            print "    " + n
-        print "%d animated textures converted" % len(nAnimated)
+            print("    " + n)
+        print("%d animated textures converted" % len(nAnimated))
         for n in nAnimated:
-            print "    " + n
-        print "%d textures not converted because converted values would be out of range" % len(nFailures)
+            print("    " + n)
+        print("%d textures not converted because converted values would be out of range" % len(nFailures))
         for n in nFailures:
-            print "    " + n
+            print("    " + n)
     
     Blender.Draw.PupMenu("|".join(summary))
 
@@ -1287,11 +1282,11 @@ def antiShadow():
         try:
             if (mat.mode & Blender.Material.Modes["SHADOWBUF"]):
                 mat.mode &= ~Blender.Material.Modes["SHADOWBUF"]
-                print 'Shadbuf removed from Material:',
-                print mat.name
+                print('Shadbuf removed from Material:')
+                print(mat.name)
         except:
-            print 'Unknown error for Material:',
-            print mat.name
+            print('Unknown error for Material:')
+            print(mat.name)
             continue
 
     Blender.Draw.PupMenu('Done! See console for details')
@@ -1303,12 +1298,12 @@ def undoFakeUser():
         try:
             wav.fakeUser = 0
             if wav.users:
-                print 'Warning! %s cannot be unlocked because it has %d user(s)' % (wav.name, wav.users)
+                print('Warning! %s cannot be unlocked because it has %d user(s)' % (wav.name, wav.users))
             else:
-                print '%s unlocked' % wav.name
+                print('%s unlocked' % wav.name)
         except:
-            print 'Unknown error for sound:',
-            print wav.name
+            print('Unknown error for sound:')
+            print(wav.name)
             continue
 
     Blender.Draw.PupMenu('Done! Save and restart Blender to remove. See console for details')
@@ -1319,13 +1314,13 @@ def doFakeUser():
     for wav in wavList:
         try:
             if wav.users:
-                print '%s already has %d user(s)' % (wav.name, wav.users)
+                print('%s already has %d user(s)' % (wav.name, wav.users))
             else:
                 wav.fakeUser = 1
-                print '%s locked' % wav.name
+                print('%s locked' % wav.name)
         except:
-            print 'Unknown error for sound:',
-            print wav.name
+            print('Unknown error for sound:')
+            print(wav.name)
             continue
 
     Blender.Draw.PupMenu('Done! See console for details')
@@ -1335,7 +1330,7 @@ def checkPassIndex():
     counter = 0
     for obj in bpy.data.scenes.active.objects:
         if obj.passIndex:
-            print '%s has PassIndex: %d' % (obj.name, obj.passIndex)
+            print('%s has PassIndex: %d' % (obj.name, obj.passIndex))
             counter = counter + 1
 
     if counter:

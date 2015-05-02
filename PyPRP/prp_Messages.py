@@ -85,10 +85,10 @@ class PrpMessage:
             elif self.msgtype == 0x024B:
                 self.data = plEventCallbackMsg(self)
             else:
-                raise ValueError, "Unsupported message type %04X %s" % (self.msgtype,MsgKeyToMsgName(self.msgtype))
+                raise ValueError("Unsupported message type %04X %s" % (self.msgtype,MsgKeyToMsgName(self.msgtype)))
         elif self.version == 6:
             #Myst 5 types
-            raise RuntimeError, "Unsupported Myst 5 message type %04X" % self.msgtype
+            raise RuntimeError("Unsupported Myst 5 message type %04X" % self.msgtype)
 
 
     def read(self,buf):
@@ -119,10 +119,10 @@ class PrpMessage:
         try:
             msg.data.read(stream)                       # read message
             return msg
-        except TypeError,detail:
-            print "Message type: ",MsgKeyToMsgName(_type)
-            print "Got TypeError:",detail
-            raise RuntimeError,detail
+        except TypeError as detail:
+            print("Message type: ",MsgKeyToMsgName(_type))
+            print("Got TypeError:",detail)
+            raise RuntimeError(detail)
     FromStream = staticmethod(_FromStream)
 
     def _ToStream(stream,msg):
@@ -220,7 +220,7 @@ class plMessage:
                 ref = refparser.RefString_FindCreateRef(scriptkey)
                 if not ref.isNull():
                     self.fReceivers.append(ref)
-            print "    appending message receiver: %s" % scriptkey
+            print("    appending message receiver: %s" % scriptkey)
 
         # for flags, take the plasma flags themselves - but don't really publish those....
         flags = list(FindInDict(script,'bcastflags',[]))
@@ -228,7 +228,7 @@ class plMessage:
         if len(flags) > 0:
             self.fBCastFlags = 0
         for flag in flags:
-            if plMessage.plBCastFlags.has_key(str(flag)):
+            if str(flag) in plMessage.plBCastFlags:
                 self.fBCastFlags |= plMessage.plBCastFlags[str(flag)]
 
 
@@ -324,7 +324,7 @@ class plArmatureEffectStateMsg(plMessage):
 
         sfc = str(FindInDict(script,"surface","dirt")).lower()
 
-        if not plArmatureEffectStateMsg.ScriptNames.has_key(sfc):
+        if sfc not in plArmatureEffectStateMsg.ScriptNames:
             sfc = "dirt"
 
         self.fSurface = plArmatureEffectStateMsg.ScriptNames[sfc]
@@ -641,8 +641,8 @@ class plCameraConfig:
         try:
             X,Y,Z, = offset.split(',')
             self.fOffset = Vertex(float(X),float(Y),float(Z))
-        except ValueError, detail:
-            print "  Error parsing camera.brain.offset (Value:",offset,") : ",detail
+        except ValueError as detail:
+            print("  Error parsing camera.brain.offset (Value:",offset,") : ",detail)
 
 
 class plSwimMsg(plMessage):
@@ -686,7 +686,7 @@ class plOneShotCallback:
 
     def export_script(self,script,refparser):
         self.fMarker = str(FindInDict(script,"marker",""))
-        print "   -> OSM Callback has Marker: %s" % self.fMarker
+        print("   -> OSM Callback has Marker: %s" % self.fMarker)
         ref = FindInDict(script,"receiver","/")
         if ref == "/":
             self.fReceiver = self.parent.fSender
@@ -716,7 +716,7 @@ class plOneShotCallbacks:
             cb.write(stream)
 
     def export_script(self,script,refparser):
-        print "  Generating OSM Callbacks..."
+        print("  Generating OSM Callbacks...")
         if type(script) == list:
             for cbscript in script:
                 cb = plOneShotCallback(self.parent)
@@ -782,8 +782,8 @@ class plMessageWithCallbacks(plMessage):
         if type(callbacks) == list:
             for callback in callbacks:
                 msgtype = FindInDict(callback, "type", None)
-                if not plMessageWithCallbacks.ScriptMsgTypes.has_key(str(msgtype)):
-                    print "ERROR: Uknown message type in plMessageWithCallbacks"
+                if str(msgtype) not in plMessageWithCallbacks.ScriptMsgTypes:
+                    print("ERROR: Uknown message type in plMessageWithCallbacks")
                     assert 0
                 paramscript = FindInDict(callback, "params", None)
                 if type(paramscript) == dict:
@@ -904,13 +904,13 @@ class plAnimCmdMsg(plMessageWithCallbacks):
             if cmd.lower() in plAnimCmdMsg.ScriptModAnimCmds:
                 cidx = plAnimCmdMsg.ScriptModAnimCmds[cmd.lower()]
                 self.fCmd.SetBit(cidx)
-        
+
         # Addon by Tachzusamm 2013-07-30: allow Speed, Time, Begin, LoopBegin etc. to be set as well
         # NOTE: the commands gotopercent and playtopercentage are still unusable ;)
         speed = FindInDict(script, "speed", None)
         if speed != None:
             self.fSpeed = float(speed)
-            print "    plAnimCmdMsg: speed: %f" % self.fSpeed
+            print("    plAnimCmdMsg: speed: %f" % self.fSpeed)
         
         # further values shorter scripted as one-liner ;)
         self.fTime = float(FindInDict(script, "time", self.fTime))
@@ -919,6 +919,7 @@ class plAnimCmdMsg(plMessageWithCallbacks):
         self.fLoopBegin = float(FindInDict(script, "loopbegin", self.fLoopBegin))
         self.fLoopEnd = float(FindInDict(script, "loopend", self.fLoopEnd))
         self.fSpeedChangeRate = float(FindInDict(script, "speedchangerate", self.fSpeedChangeRate))
+
 
 class plSoundMsg(plMessageWithCallbacks):
     ModSoundCmds = \
@@ -1033,37 +1034,37 @@ class plSoundMsg(plMessageWithCallbacks):
         volume = FindInDict(script, "volume", None)
         if volume != None:
             self.fVolume = float(volume)
-            print "    plSoundMsg: volume: %f" % float(volume)
+            print("    plSoundMsg: volume: %f" % float(volume))
 
         loop = FindInDict(script, "loop", None)
         if loop != None:
             self.fLoop = bool(loop)
-            print "    plSoundMsg: loop: %s" % loop
+            print("    plSoundMsg: loop: %s" % loop)
 
         play = FindInDict(script, "playing", None)
         if play != None:
             self.fPlaying = bool(play)
-            print "    plSoundMsg: playing: %s" % play
+            print("    plSoundMsg: playing: %s" % play)
 
         speed = FindInDict(script, "speed", None)
         if speed != None:
             self.fSpeed = float(speed)
-            print "    plSoundMsg: speed: %f" % speed
+            print("    plSoundMsg: speed: %f" % speed)
 
         time = FindInDict(script, "time", None)
         if time != None:
             self.fTime = float(time)
-            print "    plSoundMsg: time: %f" % time
+            print("    plSoundMsg: time: %f" % time)
 
         repeats = FindInDict(script, "repeats", None)
         if repeats != None:
             self.fRepeats = int(repeats)
-            print "    plSoundMsg: repeats: %d" % int(repeats)
+            print("    plSoundMsg: repeats: %d" % int(repeats))
 
         end = FindInDict(script, "end", None)
         if end != None:
             self.fEnd = float(end)
-            print "    plSoundMsg: end: %f" % float(end)
+            print("    plSoundMsg: end: %f" % float(end))
 
         cmdlist = FindInDict(script, "cmds", None)
         if type(cmdlist) == list:
@@ -1072,7 +1073,7 @@ class plSoundMsg(plMessageWithCallbacks):
                 if cmd.lower() in plSoundMsg.ScriptModSoundCmds:
                     cidx = plSoundMsg.ScriptModSoundCmds[cmd.lower()]
                     self.fCmd.SetBit(cidx)
-                    print "    plSoundMsg: Set command: %s" % cmd.lower()
+                    print("    plSoundMsg: Set command: %s" % cmd.lower())
 
 class plTimerCallbackMsg(plMessage):
     def __init__(self,parent=None,type=0x024A):

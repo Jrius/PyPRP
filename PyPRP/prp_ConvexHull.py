@@ -32,8 +32,8 @@ class alcConvexHull:
         self.vertexs=[]
         #remove dups
         if(len(self.vertexs) > 4000): # only print this out if it is indeed a high vertexcount
-            print "Computing a ConvexHull of %i vertices, processing can take some time..." %len(vertexs)
-            print ""
+            print("Computing a ConvexHull of %i vertices, processing can take some time..." %len(vertexs))
+            print("")
         for v in vertexs:
             dup=0
             for j in vertexs:
@@ -45,7 +45,7 @@ class alcConvexHull:
                 self.vertexs.append(v)
         vertexs=self.vertexs
         if len(vertexs)<3:
-            raise "Not enough vertexs"
+            raise RuntimeError("Not enough vertexs")
         elif len(vertexs)==3:
             face=[0,1,2]
             self.faces.append(face)

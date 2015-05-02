@@ -19,52 +19,28 @@
 #
 #    Please see the file LICENSE for the full license.
 
-"""
-Name: 'PyPRP Soft Volumes'
-Blender: 243
-Group: 'Add'
-Submenu: 'Add a Soft Volume Plane' i_svplane
-Submenu: 'Add a Soft Volume Cube' i_svcube
-Tooltip: 'GoW PyPRP Softvolumes'
-"""
+# This script is now called by ExportOperator.py
 
-__author__ = "GoW PyPRP Team"
-__url__ = ("blender", "elysiun",
-"Author's homepage, http://www.guildofwriters.com")
-__version__ = "GoW PRP Exporter"
+#"""
+#Name: 'PyPRP Soft Volumes'
+#Blender: 243
+#Group: 'Add'
+#Submenu: 'Add a Soft Volume Plane' i_svplane
+#Submenu: 'Add a Soft Volume Cube' i_svcube
+#Tooltip: 'GoW PyPRP Softvolumes'
+#"""
 
-__bpydoc__ = """\
-This script creates soft volumes in the PRP format
-used in URU.
-"""
-
-import Blender, time, sys, os
+import time, sys, os
+from bpy import *
 from os.path import *
-from PyPRP.prp_Functions import *
-from PyPRP.prp_ResManager import *
+from prp_Functions import *
+from prp_ResManager import *
 
 
 def new_softvolumeplane():
-    print "Adding a new Soft Volume - Plane"
     alcCreateSoftVolumePlane()
-    Blender.Redraw()
+    bpy.context.scene.update()
 
 def new_softvolumecube():
-    print "Adding a new Soft Volume - Cube"
     alcCreateSoftVolumeCube()
-    Blender.Redraw()
-
-def do_main():
-    args = __script__['arg']
-    w = args.split("_")
-    if w[1]=="svplane":
-        new_softvolumeplane()
-    elif w[1]=="svcube":
-        new_softvolumecube()
-    else:
-        raise "Unknown options %s" %(w)
-
-
-#Main code
-do_main()
-
+    bpy.context.scene.update()

@@ -19,16 +19,28 @@
 
 # Help library
 
-try:
-    import Blender
-    try:
-        from Blender import NMesh, Object, Mathutils
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
+from bpy import *
+import bpy
+import mathutils
+import random, hashlib, math, binascii, struct
 
-import random, md5,math, binascii, struct
+def isKickable(obj):
+    if not needsCoordinateInterface(obj):
+        return False
+    if obj.rigid_body.enabled and obj.rigid_body.type == "ACTIVE":
+        return True
+    return False
+
+def needsCoordinateInterface(obj):
+    if obj.type != "MESH":
+        return True
+    if obj.show_axis:
+        return True
+    if obj.animation_data != None:
+        return True
+    if obj.rigid_body != None and obj.rigid_body.enabled and obj.rigid_body.type == "ACTIVE":
+        return True
+    return False
 
 def distance(p1,p2):
     a1=p1[0]
@@ -42,26 +54,26 @@ def distance(p1,p2):
 def centerNew():
     objs = Object.Get()
     for o in objs: #Make all objects use 'Center New'
-        if o.getType() == 'Mesh':
+        if o.type == 'Mesh':
             me = o.getData()
-            mat = o.getMatrix()
+            mat = o.matrix_basis
             me.transform(mat)
             me.update()
-            mat = Blender.Mathutils.Matrix([1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0])
+            mat = mathutils.Matrix([1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0])
             o.setMatrix(mat)
             bb = o.getBoundBox()
             cu = [bb[0][n]+(bb[-2][n]-bb[0][n])/2.0 for n in [0,1,2]]
-            mat = o.getMatrix()
-            mat = Blender.Mathutils.Matrix(mat[0][:],mat[1][:],mat[2][:],[-cu[0],-cu[1],-cu[2],1.0])
+            mat = o.matrix_basis
+            mat = mathutils.Matrix(mat[0][:],mat[1][:],mat[2][:],[-cu[0],-cu[1],-cu[2],1.0])
             me.transform(mat)
             me.update()
-            mat = Blender.Mathutils.Matrix(mat[0][:],mat[1][:],mat[2][:],[cu[0],cu[1],cu[2],1.0])
+            mat = mathutils.Matrix(mat[0][:],mat[1][:],mat[2][:],[cu[0],cu[1],cu[2],1.0])
             o.setMatrix(mat)
 
 def cleanMeshes():
     objs = Object.Get()
     for o in objs:
-        if o.getType() == 'Mesh': #Applies all scales and rotations (imitates CTRL+A behaviour)
+        if o.type == 'Mesh': #Applies all scales and rotations (imitates CTRL+A behaviour)
             me = o.getData()
             mat = Mathutils.Matrix(o.matrix[0][:],o.matrix[1][:],o.matrix[2][:],[.0,.0,.0,1.0])
             me.transform(mat)
@@ -71,27 +83,22 @@ def cleanMeshes():
 
 
 def addProp(object,name,val):
-    try:
-        p=object.getProperty(name)
-        p.setData(val)
-    except (AttributeError, RuntimeError):
-        object.addProperty(name,val)
+    object[name] = val
 
 
 def getProp(object,property):
     try:
-        p=object.getProperty(property)
-        return(p.getData())
-    except (AttributeError, RuntimeError):
+        object[property]
+    except (AttributeError, RuntimeError, KeyError):
         return None
 
 
 def getMatrix(object):
     try:
-        m=Blender.Mathutils.Matrix(object.getMatrix())
+        m=mathutils.Matrix(object.matrix_basis)
     except TypeError:
-        i=object.getMatrix()
-        m=Blender.Mathutils.Matrix([i[0][0],i[0][1],i[0][2],i[0][3]],
+        i=object.matrix_basis
+        m=mathutils.Matrix([i[0][0],i[0][1],i[0][2],i[0][3]],
                                    [i[1][0],i[1][1],i[1][2],i[1][3]],
                                    [i[2][0],i[2][1],i[2][2],i[2][3]],
                                    [i[3][0],i[3][1],i[3][2],i[3][3]])
@@ -127,7 +134,7 @@ def alcAscii2Hex(name,size=4):
 def alcUniqueName(name,seed1=0,seed2=0,key="x"):
     if seed1==0 or seed2==0:
         w = str(name) + "%i" %int(random.random()*10000)
-        rid=md5.new(w).hexdigest().upper()
+        rid=hashlib.md5(w.encode('ascii')).hexdigest().upper()
         mname = str(name)[:10] + "%s%s" %(key[:1],rid[:6])
         return mname
     else:
@@ -136,182 +143,163 @@ def alcUniqueName(name,seed1=0,seed2=0,key="x"):
         return mname
 
 def alcCreateLinkInPoint(name="LinkInPointDefault",where=None,page=0):
-    obj = Blender.Object.New('Empty',name)
-    scene = Blender.Scene.GetCurrent()
-    scene.link(obj)
-    #obj.addProperty("name",name)
-    obj.addProperty("type","swpoint")
+    obj = bpy.data.objects.new(name, None)
+    scene = bpy.context.scene
+    scene.objects.link(obj)
+    #obj["name"] = name
+    obj["type"] = "swpoint"
     if page!=0:
-        obj.addProperty("page_num",str(page))
+        obj["page_num"] = page
     if where==None:
-        obj.setLocation(Blender.Window.GetCursorPos())
+        obj.location = scene.cursor_location
     else:
         matrix=where.get()
-        matrix.transpose()
         obj.setMatrix(matrix)
-    obj.layers = [2,]
-    try:
-        obj.setDrawMode(9)
-    except:
-        obj.setDrawMode(10)
-    obj.setDrawType(2)
-    #Blender.Redraw()
+    obj.show_name = True
     return obj
 
 def alcCreateRegion(name="Region",where=None,page=0):
-    #tempname = alcUniqueName(name,0,0,'X')
     rgnsize = 4
     rgnoffset = 0 - (rgnsize/2)
     obj = alcCreateBox(name,rgnsize,rgnoffset,rgnoffset,rgnoffset)
-    obj.addProperty("type","region")
+    obj["type"] = "region"
 
     if page!=0:
-        obj.addProperty("page_num",str(page))
+        obj["page_num"] = page
     if where==None:
-        obj.setLocation(Blender.Window.GetCursorPos())
+        obj.location = bpy.context.scene.cursor_location
     else:
         matrix=where.get()
-        matrix.transpose()
         obj.setMatrix(matrix)
-    obj.layers = [2,]
-    obj.drawType = 2
-    #Blender.Redraw()
+    obj.draw_type = "WIRE"
     return obj
 
 def alcCreatePanicLnkRegion(name="PanicLnkRgn",where=None,page=0):
     obj = alcCreateRegion(name,where,page)
-    obj.addProperty("regiontype","panic")
+    obj["regiontype"] = "panic"
     return obj
 
 def alcCreateFootstepRegion(name="FootStepRgn",where=None,page=0):
     obj = alcCreateRegion(name,where,page)
-    obj.addProperty("regiontype","footstep")
-    obj.addProperty("surface","grass")
+    obj["regiontype"] = "footstep"
+    obj["surface"] = "stone"
     return obj
 
 def alcCreateMesh(name,vertices,faces):
-    obj = Blender.Mesh.New(name)
-    obj.verts.extend(vertices)
-    obj.faces.extend(faces)
-    scene = Blender.Scene.GetCurrent()
-    sobj=scene.objects.new(obj,name)
-    sobj.select(False)
-    sobj.setName(name)
+    obj = bpy.data.meshes.new(name)
+    obj.from_pydata(vertices, [], faces)
+    obj.validate()
+    obj.update()
+    scene = bpy.context.scene
+    sobj=bpy.data.objects.new(name, obj)
+    scene.objects.link(sobj)
+    sobj.name = name
     return sobj
 
 
 def alcCreateBox(name,size,x=0,y=0,z=0,bReverse=False):
-    obj = Blender.Mesh.New(name)
+    obj = bpy.data.meshes.new(name)
     coords = [ [x,y,z], [size+x,y,z], [x,size+y,z], [x,y,size+z], [size+x,size+y,size+z], [size+x,size+y,z], [size+x,y,size+z], [x,size+y,size+z] ]
-    obj.verts.extend(coords)
     if bReverse:
         faces = [ [0,1,5,2], [5,4,7,2], [1,6,4,5], [0,3,6,1], [3,7,4,6], [0,2,7,3] ]
     else:
         faces = [ [0,2,5,1], [5,2,7,4], [1,5,4,6], [0,1,6,3], [3,6,4,7], [0,3,7,2] ]
-    obj.faces.extend(faces)
-    scene = Blender.Scene.GetCurrent()
-    sobj = scene.objects.new(obj,name)
-    sobj.select(False)
+    obj.from_pydata(coords, [], faces)
+    obj.validate()
+    obj.update()
+    scene = bpy.context.scene
+    sobj = bpy.data.objects.new(name, obj)
+    scene.objects.link(sobj)
     return sobj
 
 
 def alcCreatePlane(name,size,x=0,y=0,z=0):
-    obj = Blender.Mesh.New(name)
+    obj = bpy.data.meshes.new(name)
     coords = [ [x,y,z], [size+x,y,z], [x,size+y,z], [size+x,size+y,z] ]
-    obj.verts.extend(coords)
     face = [0,1,3,2]
-    obj.faces.extend(face)
-    scene = Blender.Scene.GetCurrent()
-    sobj = scene.objects.new(obj,name)
-    sobj.select(False)
+    obj.from_pydata(coords, [], [face])
+    obj.validate()
+    obj.update()
+    scene = bpy.context.scene
+    sobj = bpy.data.objects.new(name, obj)
+    sobj.draw_type = "WIRE"
+    scene.objects.link(sobj)
     return sobj
 
 
 def alcFindBlenderText(name):
     try:
-        out=Blender.Text.Get(name)
-    except NameError:
-        out=Blender.Text.New(name)
+        out=bpy.data.texts[name]
+    except KeyError:
+        if name=="AlcScript" or name=="Book": raise RuntimeError("You must create the age informations before being able to export ! (Add->PyPRP Book)")
+        out=bpy.data.texts.new(name)
+    return out
+
+
+def alcFindBlenderTextNofail(name):
+    try:
+        out=bpy.data.texts[name]
+    except KeyError:
+        out=bpy.data.texts.new(name)
     return out
 
 
 def deldefaultproperty(obj,propertyname,defaultvalue):
     try:
-        p=obj.getProperty(propertyname)
-        if(p.getData() == defaultvalue):
-            obj.removeProperty(p)
-    except (AttributeError, RuntimeError):
-        print "Error removing %s property" % propertyname
+        p=obj[propertyname]
+        if(p == defaultvalue):
+            del obj[p]
+    except (AttributeError, RuntimeError, KeyError):
+        print("Error removing %s property" % propertyname)
 
 def getFloatPropertyOrDefault(obj,propertyname,defaultvalue):
     try:
-        p=obj.getProperty(propertyname)
-        if(p.type == "FLOAT"):
-            var=float(p.getData())
-        else:
-            var=defaultvalue
-    except (AttributeError, RuntimeError):
+        var=float(obj[propertyname])
+    except (AttributeError, RuntimeError, KeyError):
         var=defaultvalue
     return var
 
 def getHexPropertyOrDefault(obj,propertyname,bytesize,defaultvalue):
     try:
-        p=obj.getProperty(propertyname)
-        if(p.type == "STRING"):
+        p=obj[propertyname]
+        if(type(p) == type("STRING")):
             var=alcAscii2Hex(str(p.getData()),bytesize)
         else:
             var=defaultvalue
-    except (AttributeError, RuntimeError):
+    except (AttributeError, RuntimeError, KeyError):
         var=defaultvalue
-        pass
     return var
 
 def getTextPropertyOrDefault(obj,propertyname,defaultvalue):
     try:
-        p=obj.getProperty(propertyname)
-        if(p.type == "STRING"):
-            var=str(p.getData())
-        else:
-            var=defaultvalue
-    except (AttributeError, RuntimeError):
+        p=obj[propertyname]
+        var=str(p)
+    except (AttributeError, RuntimeError, KeyError):
         var=defaultvalue
-        pass
     return var
 
 def getStrIntPropertyOrDefault(obj,propertyname,defaultvalue):
     try:
-        p=obj.getProperty(propertyname)
-        if(p.type == "STRING" or p.type == "INT"):
-            var=int(p.getData())
-        else:
-            var=defaultvalue
-    except (AttributeError, RuntimeError):
+        p=obj[propertyname]
+        var=int(p)
+    except (AttributeError, RuntimeError, KeyError, ValueError):
         var=defaultvalue
-        pass
     return var
 
 def getIntPropertyOrDefault(obj,propertyname,defaultvalue):
     try:
-        p=obj.getProperty(propertyname)
-        if(p.type == "INT"):
-            var=int(p.getData())
-        else:
-            var=defaultvalue
-    except (AttributeError, RuntimeError):
+        p=obj[propertyname]
+        var=int(p)
+    except (AttributeError, RuntimeError, KeyError, ValueError):
         var=defaultvalue
-        pass
     return var
 
 def getBoolPropertyOrDefault(obj,propertyname,defaultvalue):
     try:
-        p=obj.getProperty(propertyname)
-        if(p.type == "BOOL"):
-            var=int(p.getData() > 0)
-        else:
-            var=int(defaultvalue > 0)
-    except (AttributeError, RuntimeError):
-        var=int(defaultvalue > 0)
-        pass
+        p=obj[propertyname]
+        var=bool(p)
+    except (AttributeError, RuntimeError, KeyError):
+        var=bool(defaultvalue)
     return var
 
 def alcCreateSoftVolumePlane():
@@ -319,11 +307,9 @@ def alcCreateSoftVolumePlane():
     rgnsize = 4
     rgnoffset = 0 - (rgnsize/2)
     obj = alcCreatePlane(tempname,rgnsize,rgnoffset,rgnoffset,0)
-    scene = Blender.Scene.GetCurrent()
-    obj.addProperty("type","svconvex")
-    obj.setLocation(Blender.Window.GetCursorPos())
-    obj.layers = [6,]
-    obj.drawType = 2
+    scene = bpy.context.scene
+    obj["type"] = "svconvex"
+    obj.location = scene.cursor_location
     return obj
 
 
@@ -332,10 +318,9 @@ def alcCreateSoftVolumeCube():
     rgnsize = 4
     rgnoffset = 0 - (rgnsize/2)
     obj = alcCreateBox(tempname,rgnsize,rgnoffset,rgnoffset,rgnoffset,True)
-    obj.addProperty("type","svconvex")
-    obj.setLocation(Blender.Window.GetCursorPos())
-    obj.layers = [6,]
-    obj.drawType = 2
+    obj["type"]="svconvex"
+    obj.location = bpy.context.scene.cursor_location
+    obj.draw_type = "WIRE"
     return obj
 
 
@@ -432,6 +417,8 @@ class InfoDialog:
         pass
 
 def TestBlenderVersion(minimum):
+    return # assuming user isn't stupid...
+    
     # Failsafe to allow both integer and float version numbers (e.g. 245 as well as 2.45)
     if type(minimum) == float:
         minimum = int(minimum * 100)
@@ -440,5 +427,5 @@ def TestBlenderVersion(minimum):
 
     if version < minimum:
         InfoDialog("PyPRP error","PyPRP needs Blender version %0.2f or higher.\nYou are currently running version %0.2f.\nPlease upgrade!" % (float(minimum)/100.0,float(version/100.0)) ).Show()
-        raise RuntimeError, "Pyprp requires blender %0.2f or higher" % (float(minimum)/100.0)
+        raise RuntimeError("Pyprp requires blender %0.2f or higher" % (float(minimum)/100.0))
 

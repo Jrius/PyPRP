@@ -17,17 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_Types import *
 from prp_HexDump import *
 from prp_GeomClasses import *
@@ -170,47 +161,47 @@ class plLightInfo(plObjInterface):                          #Type 0x54 (Uru)
 
         # --- Determine Lamp type and Shadow Type ---
         shadow = None
-        if obj.data.type==Blender.Lamp.Types["Spot"]:
+        if obj.data.type=="SPOT":
             # plSpotLightInfo
             lamp=plSpotLightInfo.FindCreate(page,name)
-            if obj.data.mode & Blender.Lamp.Modes["RayShadow"]:
+            if obj.data.shadow_method == "RAY_SHADOW":
                 # plPointShadowMaster
                 shadow = plPointShadowMaster.FindCreate(page,name)
-        elif obj.data.type==Blender.Lamp.Types["Lamp"]:
+        elif obj.data.type=="POINT":
             # plOmniLightInfo
             lamp=plOmniLightInfo.FindCreate(page,name)
-            if obj.data.mode & Blender.Lamp.Modes["RayShadow"]:
+            if obj.data.shadow_method == "RAY_SHADOW":
                 # plPointShadowMaster
                 shadow = plPointShadowMaster.FindCreate(page,name)
-        elif obj.data.type==Blender.Lamp.Types["Area"]:
+        elif obj.data.type=="AREA":
             # plLimitedDirLightInfo
             lamp=plLimitedDirLightInfo.FindCreate(page,name)
-            if obj.data.mode & Blender.Lamp.Modes["RayShadow"]:
+            if obj.data.shadow_method == "RAY_SHADOW":
                 # plDirectionalShadowMaster
                 shadow = plDirectShadowMaster.FindCreate(page,name)
         else:
             # plDirectionalLightInfo
             lamp=plDirectionalLightInfo.FindCreate(page,name)
-            if obj.data.mode & Blender.Lamp.Modes["RayShadow"]:
+            if obj.data.shadow_method == "RAY_SHADOW":
                 # plDirectionalShadowMaster
                 shadow = plDirectShadowMaster.FindCreate(page,name)
 
         # --- Check if Lamp has a projection layer --- (HACK WARNING)
-        lampscript = AlcScript.objects.Find(obj.getName())
+        lampscript = AlcScript.objects.Find(obj.name)
         layername = FindInDict(lampscript,"lamp.layer",None)
         if(layername != None):
-            print " Attatching layer: " + layername
+            print(" Attatching layer: " + layername)
             refparser = ScriptRefParser(page, name, 0x0006, [0x0006, 0x0043,])
             layer = refparser.MixedRef_FindCreate(layername)
             lamp.data.fProjection = layer.data.getRef()
             # set the projection flags depending on the lamp type
-            if obj.data.type==Blender.Lamp.Types["Spot"]:
+            if obj.data.type=="POINT":
                 layer.data.fState.fMiscFlags |= hsGMatState.hsGMatMiscFlags["kMiscPerspProjection"]
-            elif obj.data.type==Blender.Lamp.Types["Area"]:
+            elif obj.data.type=="AREA":
                 layer.data.fState.fMiscFlags |= hsGMatState.hsGMatMiscFlags["kMiscOrthoProjection"]
             # now we set the uvw transform on the layer
             texMatrix = getMatrix(obj)
-            texMatrix.transpose()
+            #texMatrix.transpose()
             layer.data.fTransform.set(texMatrix)
 
         # --- Prepare and Export lamp object ---
@@ -245,18 +236,18 @@ class plDirectionalLightInfo(plLightInfo):
     def import_obj(self,obj):
         #the_name=alcUniqueName(name)
         if self.Key.object_type==0x55:
-            type="Area"
+            type="AREA"
         elif self.Key.object_type==0x56:
-            type="Lamp"
+            type="LAMP"
         elif self.Key.object_type==0x57:
-            type="Spot"
+            type="SPOT"
         else:
-            raise "Unknown Lamp type"
-        lamp=Blender.Lamp.New(type,str(self.Key.name))
+            raise RuntimeError("Unknown Lamp type")
+        lamp=bpy.data.lamps.new(type,str(self.Key.name))
         obj.link(lamp)
 
         obj.data.energy=0.5
-        obj.data.dist = 1000 # plasma has no distance limit for these lights, we should reflect that in blender
+        obj.data.distance = 1000 # plasma has no distance limit for these lights, we should reflect that in blender
 
         maxval = max(max(self.diffuse.r,self.diffuse.g),self.diffuse.b)
 
@@ -280,9 +271,9 @@ class plDirectionalLightInfo(plLightInfo):
 
     def export_object(self,obj):
         lamp=obj.data
-        objscript = AlcScript.objects.Find(obj.getName())
+        objscript = AlcScript.objects.Find(obj.name)
 
-        print " [Light Base]\n";
+        print(" [Light Base]\n");
 
         #set lighting flags
         try:
@@ -298,15 +289,15 @@ class plDirectionalLightInfo(plLightInfo):
 
 
         # Determine negative lighting....
-        if lamp.mode & (Lamp.Modes["Negative"]):
-            print "  >>>Negative light<<<"
-            R = 0.0 - lamp.R
-            G = 0.0 - lamp.G
-            B = 0.0 - lamp.B
+        if lamp.use_negative:
+            print("  >>>Negative light<<<")
+            R = 0.0 - lamp.color.r
+            G = 0.0 - lamp.color.g
+            B = 0.0 - lamp.color.b
         else:
-            R = lamp.R
-            G = lamp.G
-            B = lamp.B
+            R = lamp.color.r
+            G = lamp.color.g
+            B = lamp.color.b
 
         # Plasma has the same Lights as DirectX:
         #
@@ -314,19 +305,19 @@ class plDirectionalLightInfo(plLightInfo):
         energy = lamp.energy * 2
 
         # Diffuse:
-        if lamp.mode & (Lamp.Modes["NoDiffuse"]):
-            print "  Diffuse Lighting Disabled";
+        if not lamp.use_diffuse:
+            print("  Diffuse Lighting Disabled");
             self.diffuse=RGBA(0.0,0.0,0.0,1.0,type=1)
         else:
-            print "  Diffuse Lighting Enabled";
+            print("  Diffuse Lighting Enabled");
             self.diffuse=RGBA(R*energy,G*energy,B*energy,1.0,type=1)
 
         # Specular
-        if lamp.mode & (Lamp.Modes["NoSpecular"]):
-            print "  Specular Lighting Disabled";
+        if not lamp.use_specular:
+            print("  Specular Lighting Disabled");
             self.specular=RGBA(0.0,0.0,0.0,1.0,type=1)
         else:
-            print "  Specular Lighting Enabled";
+            print("  Specular Lighting Enabled");
             self.specular=RGBA(R*energy,G*energy,B*energy,1.0,type=1)
 
         # Ambient:
@@ -335,15 +326,15 @@ class plDirectionalLightInfo(plLightInfo):
         # If one wants to use a lamp as ambient, disable both diffuse and specular colors
         # Else, it's just set to 0,0,0 aka not used.
 
-        if lamp.mode & (Lamp.Modes["NoSpecular"] | Lamp.Modes["NoDiffuse"]):
-            print "  Lamp is set as ambient light"
+        if (not lamp.use_specular) and (not lamp.use_diffuse):
+            print("  Lamp is set as ambient light")
             self.ambient = RGBA(R * energy, G * energy, B * energy,1.0,type=1)
         else:
             self.ambient = RGBA(0.0, 0.0, 0.0, 0.0, type=1)
 
         # Now Calculate the matrix:
         m=getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         # Note:
         # In Blender, the Light cannot be moved in local space,
         # so Light To Local is not needed, and can remain a unity matrix.
@@ -358,24 +349,24 @@ class plDirectionalLightInfo(plLightInfo):
 
 
         #Set some shadow flags
-        if lamp.mode & (Lamp.Modes["RayShadow"]):
+        if lamp.shadow_method == "RAY_SHADOW":
             if prp_Config.ver2==11:
             #Added because UU crashes on kLPCastShadows. Shadow is cast anyway because of kSelfShadow.
             #So do we need this flag at all?
-                print "  >>> !kLPCastShadows <<< UU compatible"
+                print("  >>> !kLPCastShadows <<< UU compatible")
                 self.BitFlags[plLightInfo.Props["kLPCastShadows"]] = 0
             else:
-                print "  >>> kLPCastShadows <<<"
+                print("  >>> kLPCastShadows <<<")
                 self.BitFlags[plLightInfo.Props["kLPCastShadows"]] = 1
         else:
-            print "  >>> !kLPCastShadows <<<"
+            print("  >>> !kLPCastShadows <<<")
             self.BitFlags[plLightInfo.Props["kLPCastShadows"]] = 0
 
-        if lamp.mode & (Lamp.Modes["OnlyShadow"]):
-            print "  >>> kLPShadowOnly <<<"
+        if lamp.use_only_shadow:
+            print("  >>> kLPShadowOnly <<<")
             self.BitFlags[plLightInfo.Props["kLPShadowOnly"]] = 1
         else:
-            print "  >>> !kLPShadowOnly <<<"
+            print("  >>> !kLPShadowOnly <<<")
             self.BitFlags[plLightInfo.Props["kLPShadowOnly"]] = 0
 
 
@@ -411,7 +402,7 @@ class plDirectionalLightInfo(plLightInfo):
             self.BitFlags = hsBitVector() # reset
             for flag in flags:
                 if flag.lower() in plLightInfo.scriptProps:
-                    print "    set flag: " + flag.lower()
+                    print("    set flag: " + flag.lower())
                     idx =  plLightInfo.scriptProps[flag.lower()]
                     self.BitFlags.SetBit(idx)
 
@@ -449,11 +440,11 @@ class plLimitedDirLightInfo(plDirectionalLightInfo):
     def export_object(self, obj):
         plDirectionalLightInfo.export_object(self, obj)
         lamp=obj.data
-        objscript = AlcScript.objects.Find(obj.getName())
+        objscript = AlcScript.objects.Find(obj.name)
 
-        self.fWidth = lamp.areaSizeX
-        self.fHeight = lamp.areaSizeY
-        self.fDepth = lamp.dist
+        self.fWidth = lamp.size
+        self.fHeight = lamp.size_y
+        self.fDepth = lamp.distance
 
         # Blender limits values to 100. Override via alcscript
         self.fWidth = FindInDict(objscript, "lamp.width", self.fWidth)
@@ -495,19 +486,6 @@ class plOmniLightInfo(plDirectionalLightInfo): #Incorrect, but I guess it can sl
         stream.WriteFloat(self.fAttenQuadratic)
         stream.WriteFloat(self.fAttenCutoff)
 
-    def import_obj(self,obj):
-        plDirectionalLightInfo.import_obj(self,obj)
-
-        obj.data.dist=self.fAttenCutoff*16
-
-        if self.fAttenQuadratic  > 0.0:
-            obj.data.mode = obj.data.mode | Blender.Lamp.Modes["Quad"]
-            obj.data.quad1=self.fAttenLinear
-            obj.data.quad2=self.fAttenQuadratic
-        else:
-            obj.data.mode = obj.data.mode | Blender.Lamp.Modes["Quad"]
-        return obj
-
     def export_object(self,obj):
         plDirectionalLightInfo.export_object(self,obj)
         lamp=obj.data
@@ -534,25 +512,25 @@ class plOmniLightInfo(plDirectionalLightInfo): #Incorrect, but I guess it can sl
         #
         # # - Now there seems to be a problem with blenders distances in relation to plasma distances....
         #
-        Dist = lamp.dist/16
+        Dist = lamp.distance/16
 
-        print " [OmniLight]\n";
-        if lamp.falloffType == Lamp.Falloffs["LINQUAD"]:
-            print "  Quadratic Attenuation"
-            self.fAttenQuadratic = lamp.quad2/Dist
-            self.fAttenLinear = lamp.quad1/Dist
+        print(" [OmniLight]\n");
+        if lamp.falloff_type == "LINEAR_QUADRATIC_WEIGHTED":
+            print("  Quadratic Attenuation")
+            self.fAttenQuadratic = lamp.linear_attenuation/Dist
+            self.fAttenLinear = lamp.quadratic_attenuation/Dist
             self.fAttenConstant = 1
         else:
-            print "  Linear Attenuation"
+            print("  Linear Attenuation")
             self.fAttenQuadratic = 0.0
             self.fAttenLinear = 1.0/Dist
             self.fAttenConstant = 1
 
-        if lamp.mode & (Lamp.Modes["Sphere"]):
-            print "  Sphere cutoff mode at %f" % lamp.dist
+        if lamp.use_sphere:
+            print("  Sphere cutoff mode at %f" % lamp.distance)
             self.fAttenCutoff= Dist
         else:
-            print "  Long-range cutoff"
+            print("  Long-range cutoff")
             self.fAttenCutoff= Dist * 10
 
 
@@ -608,22 +586,21 @@ class plSpotLightInfo(plOmniLightInfo):
         plOmniLightInfo.export_object(self,obj)
         lamp=obj.data
 
-        print " [SpotLight]"
+        print(" [SpotLight]")
 
         # self.fFalloff= getFloatPropertyOrDefault(obj,"fFalloff",self.fFalloff);
 
         # Calculate the Outer angle of the Spotlight:
-        spotSizeDeg = lamp.getSpotSize()
-        self.fSpotOuter = spotSizeDeg / 180.0
+        self.fSpotOuter = lamp.spot_size / 180.0
 
         # Now calculate the angle of the inner spotlight
         #self.fSpotInner = (0.99 - (lamp.spotBlend * 0.98)) * self.fSpotOuter
-        self.fSpotInner = lamp.spotBlend * self.fSpotOuter
+        self.fSpotInner = lamp.spot_blend * self.fSpotOuter
 
         # Set the falloff to 1.0
-        if lamp.mode & (Lamp.Modes["Halo"]):
-            print "  Using Halo setting for Spotlight Falloff"
-            self.fFallOff = lamp.haloInt
+        if lamp.use_halo:
+            print("  Using Halo setting for Spotlight Falloff")
+            self.fFallOff = lamp.halo_intensity
         else:
             self.fFallOff = 1.0
 
@@ -675,20 +652,16 @@ class plShadowMaster(plObjInterface):    # Type: 0x00D3
         stream.Write32(self.fMinSize)
         stream.WriteFloat(self.fPower)
 
-    def import_obj(self,obj):
-        lamp = obj.data
-        lamp.mode |= Blender.Lamp.Modes["RayShadow"]
-
     def export_obj(self,obj):
         lamp = obj.data
 
-        print " [ShadowMaster]"
+        print(" [ShadowMaster]")
         self.BitFlags[plShadowMaster.plDrawProperties["kSelfShadow"]] = 1
 
         self.fAttenDist = 10
 
         self.fPower = lamp.energy * 2
-        print "  Power: %f" % self.fPower
+        print("  Power: %f" % self.fPower)
         pass
 
 class plShadowCaster(plMultiModifier):    #Type 0x00D4
@@ -737,14 +710,15 @@ class plShadowCaster(plMultiModifier):    #Type 0x00D4
         stream.WriteFloat(self.fBlurScale);
 
     def export_obj(self,obj):
-        print " [ShadowCaster]"
+        print(" [ShadowCaster]")
         self.fCastFlags = plShadowCaster.Flags["kSelfShadow"]
         pass
 
     def _Export(page,obj,scnobj,name,SceneNodeRef,isdynamic=0):
-        objscript = AlcScript.objects.Find(obj.getName())
+        objscript = AlcScript.objects.Find(obj.name)
         if len(obj.data.materials) > 0 :
-            if (obj.data.materials[0].mode & Blender.Material.Modes["SHADOWBUF"]) or (FindInDict(objscript, "visual.shadow", 0) != 0):
+            #if (obj.data.materials[0].use_cast_shadows) or (FindInDict(objscript, "visual.shadow", 0) != 0):
+            if FindInDict(objscript, "visual.shadow", 0) != 0: # people will ONLY be able to use shadows if they know WHAT THEY ARE DOING.
                 shadowcaster = page.prp.find(0xD4,name,1)
                 shadowcaster.data.export_obj(obj)
                 scnobj.data.data2.append(shadowcaster.data.getRef())

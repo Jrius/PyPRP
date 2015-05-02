@@ -18,7 +18,7 @@
 #    Please see the file LICENSE for the full license.
 
 
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_Types import *
 
 class ScriptRefParser:
@@ -40,7 +40,9 @@ class ScriptRefParser:
         "oneshotmod"    : 0x0077, \
         "mstagebehmod"  : 0x00C1, \
         "mipmap"        : 0x0004, \
+        "cubemap"       : 0x0005, \
         "waveset"       : 0x00FB, \
+        "dynenvmap"     : 0x0106, \
         "swimcircular"  : 0x0134, \
         "swimstraight"  : 0x0136, \
         "clustergroup"  : 0x012B, \
@@ -175,7 +177,7 @@ class ScriptRefParser:
 
     def _NameTypeDecode(_type):
         # try to decode the first param as a typename
-        if ScriptRefParser.NameToType.has_key(_type):
+        if _type in ScriptRefParser.NameToType:
             return ScriptRefParser.NameToType[_type]
         else:
             if type(_type) == int:
@@ -187,7 +189,7 @@ class ScriptRefParser:
                     return int(_type,16)
                 except:
 #                    print "WARNING: Could not decode %s to an object type code. Type of object:"%(_type),type(_type)
-                    raise ValueError, "Decoding error"
+                    raise ValueError("Decoding error")
     NameTypeDecode = staticmethod(_NameTypeDecode)
 
     # Next we have object functions
@@ -213,7 +215,7 @@ class ScriptRefParser:
             # try to decode the first param as a typename
             try:
                 keytype = ScriptRefParser.NameTypeDecode(self.defaulttype)
-            except ValueError,detail:
+            except ValueError as detail:
 #                print "Error:",detail,"on keystring",keystring,"and basetype",self.defaulttype
                 return None
 
@@ -272,7 +274,7 @@ class ScriptRefParser:
                 if len(self.allowlist) == 0 or keyinfo["type"] in self.allowlist:
                     return page.find(keyinfo["type"],name,create)
                 else:
-                    print "Warning: Key type",keyinfo["type"],"is not list of allowes types:",self.allowlist
+                    print("Warning: Key type",keyinfo["type"],"is not list of allowes types:",self.allowlist)
                     return None
             else:
                 return None

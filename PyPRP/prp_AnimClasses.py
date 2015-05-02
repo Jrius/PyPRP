@@ -17,18 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-        from Blender import Ipo
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_Types import *
 from prp_DXTConv import *
 from prp_HexDump import *
@@ -395,7 +385,7 @@ class plDynaRippleVSMgr(plDynaRippleMgr):
         refparser = ScriptRefParser(self.getRoot(),str(self.Key.name), 0x00FB, [0x00FB,])
         WaveSetBaseObj = refparser.MixedRef_FindCreate(WaveSetBase)
         self.fWaveSetBase = WaveSetBaseObj.data.getRef()
-        print 'WavesetRef:', self.fWaveSetBase
+        print('WavesetRef:', self.fWaveSetBase)
 #        WaveSetBaseObj = prp_MatClasses.plWaveSet7.FindCreate(self.getRoot(),'Water')
 
         self.fPartyObjects = hsTArray()
@@ -590,7 +580,7 @@ class plParticleEmitter:
         pass
 
     def read(self,buf):
-        raise "Can't read plParticleEmitter, yet..."
+        raise RuntimeError("Can't read plParticleEmitter, yet...")
 
 
 class plAnimStage:
@@ -759,7 +749,7 @@ class PrpEaseCurve:
             self.type = type
         if(version != 5):
             self.data = None
-            raise "Can only read Ease Curves for Uru. Myst 5 NOT SUPPORTED!!!"
+            raise RuntimeError("Can only read Ease Curves for Uru. Myst 5 NOT SUPPORTED!!!")
 
         self.Key = plKey(5)
 
@@ -772,7 +762,7 @@ class PrpEaseCurve:
         elif type == 0x8000: #NULL Creatable ;)
             self.data = None
         else:
-            raise "Unexpected plCreatable Object Type [%04X] -- expected a plATCEaseCurve -- Sombody's on crack..." %type
+            raise RuntimeError("Unexpected plCreatable Object Type [%04X] -- expected a plATCEaseCurve -- Sombody's on crack..." %type)
 
     def read(self,buf):
         if self.data != None:
@@ -866,7 +856,7 @@ class PrpController:
         self.ctrlType = type
         if(version != 5):
             self.data = None
-            raise "Can only read Controllers for Uru. Myst 5 NOT SUPPORTED!!!"
+            raise RuntimeError("Can only read Controllers for Uru. Myst 5 NOT SUPPORTED!!!")
 
         self.Key = plKey(5)
         self.setType(type)
@@ -919,7 +909,7 @@ class PrpController:
         elif type == 0x8000: #NULL Creatable ;)
             self.data = None
         else:
-            raise "Unexpected plCreatable Object Type [%04X] -- expected a plController -- Sombody's on crack..." %type
+            raise RuntimeError("Unexpected plCreatable Object Type [%04X] -- expected a plController -- Sombody's on crack..." %type)
 
     def read(self,buf):
         self.ctrlType = buf.Read16()
@@ -1788,15 +1778,15 @@ class plAnimTimeConvert:
                 Msg = PrpMessage.FromStream(stream)
                 self.fCommandList.add(Msg.data)
 
-        except ValueError, detail:
-            print "/---------------------------------------------------------"
-            print "|  WARNING:"
-            print "|   Got Value Error:" , detail, ":"
-            print "|   While reading message arrays of plAnimTimeConvert..."
-            print "|   Unknown message type not implemented."
-            print "|   ABORTING!!!"
-            print "\---------------------------------------------------------\n"
-            raise RuntimeError, "Unknown message type not implemented"
+        except ValueError as detail:
+            print("/---------------------------------------------------------")
+            print("|  WARNING:")
+            print("|   Got Value Error:" , detail, ":")
+            print("|   While reading message arrays of plAnimTimeConvert...")
+            print("|   Unknown message type not implemented.")
+            print("|   ABORTING!!!")
+            print("\---------------------------------------------------------\n")
+            raise RuntimeError("Unknown message type not implemented")
 
         count = stream.Read32()
         for i in range(count):
@@ -1863,15 +1853,15 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
     def export_obj(self, obj, animscript=dict()):
         plSynchedObject.export_obj(self, obj, AlcScript.objects.Find(obj.name))
         self.fName = FindInDict(animscript, "name", obj.name)
-        print 'Exporting IPO %s' % self.fName
+        print('Exporting IPO %s' % self.fName)
         endFrame = 0
         
         # if we have any object transform curves, we add a matrix controller channel and applicator
-        if(obj.ipo):
-            ipo = obj.ipo
+        if(obj.animation_data):
+            ipo = obj.animation_data
             if obj.parent:
                 # deal with blender's weird method of keeping the location ipo in global space
-                ploc = obj.parent.loc
+                ploc = obj.parent.location
             else:
                 ploc = [0, 0, 0]
             if (Ipo.OB_LOCX in ipo) or (Ipo.OB_LOCY in ipo) or (Ipo.OB_LOCZ in ipo) or (Ipo.OB_ROTX in ipo) or (Ipo.OB_ROTY in ipo) or (Ipo.OB_ROTZ in ipo):
@@ -1933,14 +1923,14 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                 
                 # the affine parts "T" part seems to correspond with the un-animated position of the object
                 # affineparts appears to be the "default" transform that is used if there is no controller available
-                objloc = obj.getMatrix("localspace")[3]
+                objloc = obj.location
                 ctlchn.data.fAP.fT = Vertex(objloc[0], objloc[1], objloc[2])
-                ctlchn.data.fAP.fQ.setQuat(obj.getMatrix("localspace").toQuat())
+                ctlchn.data.fAP.fQ.setQuat(obj.matrix_basis.to_quaternion())
                 ctlchn.data.fAP.fK = Vertex(obj.size[0], obj.size[1], obj.size[2])
                 self.fApps.append(self.pair(app, ctlchn))
 
         # if we have any lamp color curves, (LA_R, LA_G, LA_B) we add a lightdiffuse applicator and point controller channel
-        if(obj.type == "Lamp")and(obj.data.ipo):
+        if(obj.type == "LAMP")and(obj.data.ipo):
             ipo = obj.data.ipo # first, we get the lamp ipo
             if (Ipo.LA_R in ipo) or (Ipo.LA_G in ipo) or (Ipo.LA_B in ipo):
                 app = PrpController(0x030B) #plLightDiffuseApplicator
@@ -1998,7 +1988,7 @@ class plAgeGlobalAnim(plAGAnim):
         plAGAnim.export_obj(self, obj, animscript)
         self.fGlobalVarName = FindInDict(animscript, "globalvar", None)
         if self.fGlobalVarName == None:
-            raise "Cannot export an ageGlobalAnim without a SDL variable name!"
+            raise RuntimeError("Cannot export an ageGlobalAnim without a SDL variable name!")
 
 class plATCAnim(plAGAnim): #type 0xF1
     class pair:
@@ -2035,7 +2025,7 @@ class plATCAnim(plAGAnim): #type 0xF1
 
     def export_obj(self, obj, animscript=dict()):
         plAGAnim.export_obj(self, obj, animscript)
-        print "   [ATCAnimation %s]"%(str(self.Key.name))
+        print("   [ATCAnimation %s]"%(str(self.Key.name)))
         
         self.fAutoStart = FindInDict(animscript, "autostart", 1)
         self.fLoop = FindInDict(animscript, "loop", 1)
@@ -2091,13 +2081,13 @@ class plATCAnim(plAGAnim): #type 0xF1
         stream.WriteFloat(self.fEaseOutLength)
 
         stream.WriteInt(len(self.fMarkers))
-        keys = self.fMarkers.keys()
+        keys = list(self.fMarkers.keys())
         for key in keys:
             stream.WriteSafeString(key)
             stream.WriteFloat(self.fMarkers[key])
 
         stream.WriteInt(len(self.fLoops))
-        keys = self.fLoops.keys()
+        keys = list(self.fLoops.keys())
         for key in keys:
             stream.WriteSafeString(key)
             pair = self.fLoops[key]

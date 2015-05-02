@@ -16,17 +16,8 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 #    Please see the file LICENSE for the full license.
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle, mathutils
 from prp_Types import *
 from prp_DXTConv import *
 from prp_HexDump import *
@@ -48,7 +39,7 @@ import prp_QuickScripts
 class AlcLogicHelper:
 
     def _Export(page,obj,scnobj,name):
-        print " [LogicHelper]"
+        print(" [LogicHelper]")
         objscript = AlcScript.objects.Find(obj.name)
         # Export prefefined scripts:
 
@@ -81,13 +72,13 @@ class AlcLogicHelper:
 
         # get the matrix, rotation and scales
         l2wMtx = getMatrix(obj)
-        w2lMtx = Blender.Mathutils.Matrix(l2wMtx).invert()
+        w2lMtx = mathutils.Matrix(l2wMtx).inverted()
 
-        rotEuler = l2wMtx.rotationPart().toEuler()
-        sizeVect = Blender.Mathutils.Vector(obj.size)
+        rotEuler = l2wMtx.to_euler()
+        sizeVect = mathutils.Vector(obj.scale)
 
         # get the objects bounding box
-        bbx = obj.getBoundBox()
+        bbx = obj.bound_box
 
         i = 0
         mworld = []
@@ -96,8 +87,8 @@ class AlcLogicHelper:
         # bit nr   2 1 0
         # index = [x,y,z] -> z/x/y = 1 indicates hightest value, 0 indicates lowest value
         for i in [0,1,3,2,4,5,7,6]:
-            vworld = Blender.Mathutils.Vector(bbx[i][0],bbx[i][1],bbx[i][2],1)
-            vlocal = Blender.Mathutils.Vector(vworld) * w2lMtx
+            vworld = mathutils.Vector((bbx[i][0],bbx[i][1],bbx[i][2],1))
+            vlocal = mathutils.Vector(vworld) * w2lMtx
 
             mworld.append(vworld)
             mlocal.append(vlocal)
@@ -168,30 +159,30 @@ class AlcLogicHelper:
         # world coords directly - nasty thing is that we need to "localize" the top/bottom regions depth (y width)
 
         # first calculate the bottom region's centerpoint, and make it into a vector
-        btmVect = Blender.Mathutils.Vector(ctrLX,ctrLY + (gripOffset/sizeVect.y) + (btmYOffset/sizeVect.y) + (deltaLY/2) + ((btmdepth/sizeVect.y)/2), mlocal[0].z,1) * l2wMtx
+        btmVect = mathutils.Vector((ctrLX,ctrLY + (gripOffset/sizeVect.y) + (btmYOffset/sizeVect.y) + (deltaLY/2) + ((btmdepth/sizeVect.y)/2), mlocal[0].z,1)) * l2wMtx
         # next calculate the top region's centerpoint, and make it into a vector
-        topVect = Blender.Mathutils.Vector(ctrLX,ctrLY + (topYOffset/sizeVect.y) + (deltaLY/2) - ((topdepth/sizeVect.y)/2), mlocal[7].z,1) * l2wMtx
+        topVect = mathutils.Vector((ctrLX,ctrLY + (topYOffset/sizeVect.y) + (deltaLY/2) - ((topdepth/sizeVect.y)/2), mlocal[7].z,1)) * l2wMtx
 
         # now build up the matrices
         # determine the translation matrices
-        btmTrlMtx = Blender.Mathutils.TranslationMatrix(btmVect).resize4x4()
-        topTrlMtx = Blender.Mathutils.TranslationMatrix(topVect).resize4x4()
+        btmTrlMtx = mathutils.Matrix.Translation(btmVect)
+        topTrlMtx = mathutils.Matrix.Translation(topVect)
 
         # determine the rotation eulers:
         # default rotation is similar to the objects rotation
-        btmEuler = Blender.Mathutils.Euler(rotEuler)
-        topEuler = Blender.Mathutils.Euler(rotEuler)
+        btmEuler = mathutils.Euler(rotEuler)
+        topEuler = mathutils.Euler(rotEuler)
 
         # rotate the top euler by 180 degrees around local Z
-        topEuler.rotate(180, 'z')
+        topEuler.rotate_axis('Z', 3.1413)
 
         # make rotation matrices from the eulers
-        btmRotMtx = btmEuler.toMatrix().resize4x4()
-        topRotMtx = topEuler.toMatrix().resize4x4()
+        btmRotMtx = btmEuler.to_matrix().to_4x4()
+        topRotMtx = topEuler.to_matrix().to_4x4()
 
         # combine the matrices!
 
-        IdentityMtx3d = Blender.Mathutils.Matrix([1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,0])
+        IdentityMtx3d = mathutils.Matrix(([1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,0]))
         btmMtx = btmRotMtx + btmTrlMtx - IdentityMtx3d
         topMtx = topTrlMtx + topRotMtx - IdentityMtx3d
 
@@ -209,14 +200,14 @@ class AlcLogicHelper:
         climbHeight = int((deltaWZ - 5.42)/2)
         climbOffset = 0
 
-        print "[AutoLadder Script]"
-        print "    Calculated Ladder:"
-        print "    Bottom Region Matrix:"
-        print btmMtx
-        print "    Top Region Matrix:"
-        print topMtx
-        print "    climbHeight: %d" % climbHeight
-        print "    Attempting to create objects:"
+        print("[AutoLadder Script]")
+        print("    Calculated Ladder:")
+        print("    Bottom Region Matrix:")
+        print(btmMtx)
+        print("    Top Region Matrix:")
+        print(topMtx)
+        print("    climbHeight: %d" % climbHeight)
+        print("    Attempting to create objects:")
 
         # construct the objects:
         SceneNodeRef=page.prp.getSceneNode().data.getRef()
@@ -246,8 +237,8 @@ class AlcLogicHelper:
             # calculate the correct settings
 
             btmClimbRegion.data.export_raw(btmMtx,0,climbHeight,1)
-            print "Loops: %d" % climbHeight
-            print "GoingUp: 1"
+            print("Loops: %d" % climbHeight)
+            print("GoingUp: 1")
 
             # End calculate the right settings
             btmScnobj.data.data2.append(btmClimbRegion.data.getRef())
@@ -280,8 +271,8 @@ class AlcLogicHelper:
             # calculate the correct settings
 
             topClimbRegion.data.export_raw(topMtx,0,climbHeight,0)
-            print "Loops: %d" % climbHeight
-            print "GoingUp: 0"
+            print("Loops: %d" % climbHeight)
+            print("GoingUp: 0")
 
             # End calculate the right settings
             topScnobj.data.data2.append(topClimbRegion.data.getRef())
@@ -296,7 +287,7 @@ class AlcLogicHelper:
         regiontype = FindInDict(objscript,'regiontype',regiontype)
         regiontype = getTextPropertyOrDefault(obj,"regiontype",regiontype)
 
-        print " [LogicHelper]"
+        print(" [LogicHelper]")
         if regiontype.lower() == "climbing":
             plAvLadderMod.Export(page,obj,scnobj,name)
         elif regiontype.lower() == "swimdetect":
@@ -343,10 +334,10 @@ class AlcLogicHelper:
         if type(actions) == list:
             AlcLogicHelper.ExportActions(page,actions,scnobj)
         else:
-            print "   No actions in list"
-            print actions
+            print("   No actions in list")
+            print(actions)
 
-        print "   Exporting modifiers"
+        print("   Exporting modifiers")
         # export of modifiers is delegated to the plInterfaceInfoModifier
         logicmods = FindInDict(script,"modifiers",None)
         if type(logicmods) == dict: # It should be a list - if it's a dict, make it a list with one entry
@@ -354,13 +345,13 @@ class AlcLogicHelper:
         if type(logicmods) == list:
             plInterfaceInfoModifier.Export(page,logicmods,scnobj)
         else:
-            print "   No modifiers"
-            print logicmods
+            print("   No modifiers")
+            print(logicmods)
 
     ExportLogic = staticmethod(_ExportLogic)
 
     def _ExportActions(page,script,scnobj):
-        print "   Exporting actions"
+        print("   Exporting actions")
         if type(script) == list:
             for actscript in script:
                 if type(actscript) == dict:
@@ -495,7 +486,7 @@ class plInterfaceInfoModifier(plSingleModifier):
                 scnobj.data.addModifier(logicmod)
 
     def _Export(page,script,scnobj):
-        print "   Exporting modifiers"
+        print("   Exporting modifiers")
         handle = str(scnobj.data.Key.name)
         intf_infomod = plInterfaceInfoModifier.FindCreate(page,handle)
         intf_infomod.data.export_script(script,scnobj)
@@ -642,58 +633,58 @@ class plLogicModifier(plLogicModBase):
         self.fConditionList.append(obj.data.getRef())
 
     def addReceiver(self,mod):
-        print "  Appending Receiver:",mod.data.getRef()
+        print("  Appending Receiver:",mod.data.getRef())
         self.fNotify.data.fReceivers.append(mod.data.getRef())
 
     def export_script(self,script,scnobj):
 
         if type(script) == dict:
-            print "  [LogicModifier %s]"%(str(self.Key.name))
+            print("  [LogicModifier %s]"%(str(self.Key.name)))
             # Handle flags first:
             flags = FindInDict(script,"flags",None)
             if type(flags) == list:
                 self.fFlags.clear()
-                print "   Initial self.fFlags is:",self.fFlags
+                print("   Initial self.fFlags is:",self.fFlags)
                 # set the flags in the list
                 for flag in flags:
-                    if plLogicModifier.ScriptFlags.has_key(str(flag).lower()):
+                    if str(flag).lower() in plLogicModifier.ScriptFlags:
                         self.fFlags[plLogicModifier.ScriptFlags[str(flag)]] = 1
-                        print "   Got flag: %s - %X"%(str(flag),plLogicModifier.ScriptFlags[str(flag)])
-                        print "   self.fFlags is now:",self.fFlags
+                        print("   Got flag: %s - %X"%(str(flag),plLogicModifier.ScriptFlags[str(flag)]))
+                        print("   self.fFlags is now:",self.fFlags)
             else:
                 # set default flags...
                 self.fFlags[plLogicModBase.Flags["kMultiTrigger"]] = 1
 
             # logicmod settings next
             cursor = str(FindInDict(script,"cursor","up"))
-            if plLogicModifier.ScriptCursors.has_key(cursor.lower()):
+            if cursor.lower() in plLogicModifier.ScriptCursors:
                 self.fMyCursor = plLogicModifier.ScriptCursors[cursor.lower()]
 
             # followed by conditions
-            print "   Conditions:"
+            print("   Conditions:")
             conditions = list(FindInDict(script,"conditions",[]))
             for condscript in conditions:
                 plConditionalObject.Export(self.getRoot(),condscript,scnobj,self.parent)
 
             # next detectors
-            print "   Activators:"
+            print("   Activators:")
             activators = list(FindInDict(script,"activators",[]))
             for activatorscript in activators:
                 plDetectorModifier.Export(self.getRoot(),activatorscript,scnobj,self.parent)
 
             # and finally by actions
 
-            print "   Actions:"
+            print("   Actions:")
             actions = list(FindInDict(script,"actions",[]))
 
-            print actions
+            print(actions)
             uniqueindex = 1
             for actscript in actions:
                 _type = FindInDict(actscript,"type",None)
 
                 if not _type is None:
                     action_type = str(_type)
-                    print "  Action is of type",action_type
+                    print("  Action is of type",action_type)
 
                     ref = str(FindInDict(actscript,"ref",None))
                     refparser = ScriptRefParser(self.getRoot(),str(scnobj.data.Key.name))
@@ -702,24 +693,24 @@ class plLogicModifier(plLogicModBase):
                     plobj = None
                     if action_type == "pythonfile":
                         # plPythonFileMod
-                        print "Locating python file reference '%s'"%(ref)
+                        print("Locating python file reference '%s'"%(ref))
                         refparser.SetDefaultType(0x00A2)
                         refparser.SetAllowList([0x00A2,])
                         plobj = refparser.MixedRef_FindCreate(ref)
                     elif action_type == "responder":
                         # plResponderModifier
-                        print "Locating responder mod reference '%s'"%(ref)
+                        print("Locating responder mod reference '%s'"%(ref))
                         refparser.SetDefaultType(0x007C)
                         refparser.SetAllowList([0x007C,])
                         plobj = refparser.MixedRef_FindCreate(ref)
                     elif action_type == "sittingmod":
                         # plSittingModifier
-                        print "Locating sitting mod reference '%s'"%(ref)
+                        print("Locating sitting mod reference '%s'"%(ref))
                         refparser.SetDefaultType(0x00AE)
                         refparser.SetAllowList([0x00AE,])
                         plobj = refparser.MixedRef_FindCreate(ref)
                     elif action_type == "oneshot":
-                        print "Creating Responder modifier to oneshot reference '%s'"%(ref)
+                        print("Creating Responder modifier to oneshot reference '%s'"%(ref))
                         # plOneShotMod
                         refparser.SetDefaultType(0x0077)
                         refparser.SetAllowList([0x0077,])
@@ -835,7 +826,7 @@ class plDetectorModifier(plSingleModifier):                 #Type 0x24
             if not name is None:
                 handle = str(name)
 
-            print "    Found Activator %s of type:"%(handle), _type
+            print("    Found Activator %s of type:"%(handle), _type)
 
 
             detmod = None
@@ -911,7 +902,7 @@ class plCollisionDetector(plDetectorModifier):              #Type 0x2C
         if len(types) > 0:
             self.fType = 0
             for _type in types:
-                if plCollisionDetector.ScriptType.has_key(_type.lower()):
+                if _type.lower() in plCollisionDetector.ScriptType:
                     self.fType |= plCollisionDetector.ScriptType[_type.lower()]
 
 class plObjectInVolumeDetector(plCollisionDetector):
@@ -1093,7 +1084,7 @@ class plCameraRegionDetector(plDetectorModifier):
         StoreInDict(objscript,"region.camera.cameras",msgscripts)
 
     def export_obj(self,obj,scnobj):
-        print "  [CameraRegionDetector %s]"%(str(self.Key.name))
+        print("  [CameraRegionDetector %s]"%(str(self.Key.name)))
         objscript = AlcScript.objects.Find(obj.name)
 
         messages = list(FindInDict(objscript,"region.camera.messages"))
@@ -1127,7 +1118,7 @@ class plSubWorldRegionDetector(plDetectorModifier):
     def _FindCreate(page,name):
         return page.find(0x00F3,name,1)
     FindCreate = staticmethod(_FindCreate)
-
+    
     def export_obj(self,obj):
         objscript = AlcScript.objects.Find(obj.name)
         self.fOnExit = FindInDict(objscript, "region.onexit", self.fOnExit)
@@ -1217,7 +1208,7 @@ class plConditionalObject(hsKeyedObject):                   #Type 0x2E
             if not name is None:
                 handle = str(name)
 
-            print "    Found Condition %s of type:"%(handle), _type
+            print("    Found Condition %s of type:"%(handle), _type)
 
             condobj = None
             if _type == "volumesensor":
@@ -1463,17 +1454,17 @@ Example AlcScript:
               advanceto: <stage number, ex: 0 (first stage)> # optional, if not present: is disabled entirely
               regressto: <stage number, ex: 3 (fourth stage)> # optional, if not present: is disabled entirely
         receivers:
-            - <receivertype>: <objectname> # not required if using a Python script
+            - <receivertype>: <objectname>  # not required if using a Python script
             - <receivertype>: <objectname>
 
 """
-        print "   [MultistageBehMod %s]"%(str(self.Key.name))
+        print("   [MultistageBehMod %s]"%(str(self.Key.name)))
         # allow object to be customized given a given script....
 
 
         # check where we should add ourself..
         remote = FindInDict(script,"remote",None)
-        if remote is not None and str:
+        if not remote is None and str(remote) != "":
             # if a name was given, usethat one to Find (or Create) the scene object ofthe seek point
             ext_scnobj = plSceneObject.FindCreate(self.getRoot(),remote)
 
@@ -1494,7 +1485,7 @@ Example AlcScript:
         self.fFreezePhys = bool(str(FindInDict(script, 'freezephys', str(self.fFreezePhys))).lower() == 'true')
         self.fSmartSeek = bool(str(FindInDict(script, 'smartseek', str(self.fSmartSeek))).lower() == 'true')
         self.fReverseFBControlsOnRelease = bool(str(FindInDict(script, 'reverseonrelease', str(self.fReverseFBControlsOnRelease))).lower() == 'true')
-
+        
 
         stagelist = list(FindInDict(script,"stages",[]))
         for stagescript in stagelist:
@@ -1605,7 +1596,7 @@ class plOneShotMod(plMultiModifier):
         stream.WriteBool(self.fNoSeek)
 
     def export_script(self,script,scnobj=None):
-        print "   [OneShotMod %s]"%(str(self.Key.name))
+        print("   [OneShotMod %s]"%(str(self.Key.name)))
         # allow object to be customized given a given script....
 
 
@@ -1691,7 +1682,7 @@ class plPythonFileMod(plMultiModifier):
         self.fParameters.append(pyparam)
 
     def export_script(self,script,scnobj):
-        print "   [PythonFileMod %s]"%(str(self.Key.name))
+        print("   [PythonFileMod %s]"%(str(self.Key.name)))
         self.fPythonFile = str(FindInDict(script,"file",""))
 
         receiverlist = list(FindInDict(script,"receivers",[]))
@@ -1881,12 +1872,13 @@ class plPythonParameter :
         resmgr = page.resmanager
         idx = int(FindInDict(argscript,"index",index))		# Paradox-Mod to allow forcing the index (ID) of parameters
 
-        if plPythonParameter.ScriptValueType.has_key(_type):
+        if _type in plPythonParameter.ScriptValueType:
             typeinfo = plPythonParameter.ScriptValueType[_type]
             if   typeinfo["type"] == "bool":
                 value = bool(str(FindInDict(argscript,"value","false")).lower() == "true")
                 param = plPythonParameter(pyfmod)
                 param.fValue = value
+
                 param.fID = idx
                 param.fValueType = typeinfo["typenum"]
                 pyfmod.data.addParameter(param)
@@ -1894,6 +1886,7 @@ class plPythonParameter :
                 value = int(FindInDict(argscript,"value","0"))
                 param = plPythonParameter(pyfmod)
                 param.fValue = value
+
                 param.fID = idx
                 param.fValueType = typeinfo["typenum"]
                 pyfmod.data.addParameter(param)
@@ -1901,6 +1894,7 @@ class plPythonParameter :
                 value = float(FindInDict(argscript,"value","0.0"))
                 param = plPythonParameter(pyfmod)
                 param.fValue = value
+
                 param.fID = idx
                 param.fValueType = typeinfo["typenum"]
                 pyfmod.data.addParameter(param)
@@ -1908,11 +1902,13 @@ class plPythonParameter :
                 value = str(FindInDict(argscript,"value","0"))
                 param = plPythonParameter(pyfmod)
                 param.fValue = value
+
                 param.fID = idx
                 param.fValueType = typeinfo["typenum"]
                 pyfmod.data.addParameter(param)
             elif typeinfo["type"] == "none":
                 param = plPythonParameter(pyfmod)
+
                 param.fID = idx
                 param.fValueType = typeinfo["typenum"]
                 #pyfmod.data.addParameter(param)
@@ -1940,19 +1936,19 @@ class plPythonParameter :
         param.fValueType = typeinfo["typenum"]
 
         # interpret tags....
-        if typeinfo.has_key("tag"):
+        if "tag" in typeinfo:
             if typeinfo["tag"] == "texture":
                 # For textures, go to the Textures PRP by default.... unless we export textures to the same prp
                 if not prp_Config.export_textures_to_page_prp:
                     page=resmgr.findPrp("Textures")
                     if page==None:
-                        raise "    Textures PRP file not found"
+                        raise RuntimeError("    Textures PRP file not found")
 
         refparser = ScriptRefParser(page,str(scnobj.data.Key.name),typeinfo["defaultkeytype"],typeinfo["allowlist"])
         # and try to find a plasma object accordingly:
-        print "    For python file mod %s, index %i we're exporting value type %s, key string %s"%(str(pyfmod.data.Key.name),index,typeinfo["typenum"],keystr)
+        print("    For python file mod %s, index %i we're exporting value type %s, key string %s"%(str(pyfmod.data.Key.name),index,typeinfo["typenum"],keystr))
         param.fObjectKey = refparser.MixedRef_FindCreateRef(keystr)
-        print "    Key string boiled down to: ",param.fObjectKey
+        print("    Key string boiled down to: ",param.fObjectKey)
         pyfmod.data.addParameter(param)
 
     ExportKey = staticmethod(_ExportKey)
@@ -2009,14 +2005,14 @@ class plResponderModifier(plSingleModifier):
                 state.read(stream)
                 self.fStates.append(state)
 
-        except ValueError, detail:
-            print "/---------------------------------------------------------"
-            print "|  WARNING:"
-            print "|   Got Value Error:" , detail, ":"
-            print "|   Skipping state array of plResponderModifier"
-            print "|   -> Skipping %i bytes ahead " % ( (start + size - 3) - stream.tell())
-            print "|   -> Total object size: %i bytes"% (size)
-            print "\---------------------------------------------------------\n"
+        except ValueError as detail:
+            print("/---------------------------------------------------------")
+            print("|  WARNING:")
+            print("|   Got Value Error:" , detail, ":")
+            print("|   Skipping state array of plResponderModifier")
+            print("|   -> Skipping %i bytes ahead " % ( (start + size - 3) - stream.tell()))
+            print("|   -> Total object size: %i bytes"% (size))
+            print("\---------------------------------------------------------\n")
 
             stream.seek(start + size - 3) #reposition the stream to read in the last 3 bytes
 
@@ -2049,7 +2045,7 @@ class plResponderModifier(plSingleModifier):
         stream.WriteByte(self.fFlags)
 
     def export_script(self,script,scnobj):
-        print "   [ResponderModifier %s]"%(str(self.Key.name))
+        print("   [ResponderModifier %s]"%(str(self.Key.name)))
         plSingleModifier.export_obj(self,scnobj,script)
         statelist = FindInDict(script,"states",[])
         if type(statelist) != list:
@@ -2074,7 +2070,7 @@ class plResponderModifier(plSingleModifier):
         flags = FindInDict(script,"flags",["detecttrigger"])
         if type(flags) == list:
             for flag in flags:
-                if plResponderModifier.ScriptFlags.has_key(str(flag).lower()):
+                if str(flag).lower() in plResponderModifier.ScriptFlags:
                     self.fFlags |= plResponderModifier.ScriptFlags[str(flag).lower()]
 
 
@@ -2113,8 +2109,8 @@ class plResponderState:
         for cmd in self.fCmds:
             cmd.write(stream)
 
-        stream.WriteByte(len(self.fWaitToCmd.keys()))
-        for key in self.fWaitToCmd.keys():
+        stream.WriteByte(len(list(self.fWaitToCmd.keys())))
+        for key in list(self.fWaitToCmd.keys()):
             stream.WriteByte(key)
             stream.WriteByte(self.fWaitToCmd[key])
 
@@ -2179,7 +2175,7 @@ class plResponderCmd:
 
     def export_script(self,script,scnobj):
         msgtype = FindInDict(script,"type",None)
-        if not plResponderCmd.ScriptMsgTypes.has_key(str(msgtype)):
+        if str(msgtype) not in plResponderCmd.ScriptMsgTypes:
             msgtype = "oneshotmsg"
 
         self.fMsg = PrpMessage(plResponderCmd.ScriptMsgTypes[msgtype],self.parent.parent.getVersion())    # create correct message object
@@ -2274,9 +2270,10 @@ class plAvLadderMod(plSingleModifier):
         v = Vertex(self.fLadderView.x,self.fLadderView.y,self.fLadderView.z)
 
         matrix = getMatrix(obj)
-        rotMatrix = matrix.rotationPart().resize4x4()
+        rotMatrix = matrix.copy()
+        rotMatrix.translation = mathutils.Vector((0,0,0))
         rotMatrix.invert()
-        rotMatrix.transpose()
+        #rotMatrix.transpose()
         m = hsMatrix44()
         m.set(rotMatrix)
         v.transform(m)
@@ -2285,22 +2282,22 @@ class plAvLadderMod(plSingleModifier):
 
 
     def export_obj(self,obj):
-        print "  [Ladder Modifier %s]"%(str(self.Key.name))
+        print("  [Ladder Modifier %s]"%(str(self.Key.name)))
         objscript = AlcScript.objects.FindOrCreate(obj.name)
         # calculate the approximate Direction vector
         vct = str(FindInDict(objscript,"region.ladder.ladderview","0,-1,0"))
         try:
             X,Y,Z, = vct.split(',')
             v = Vertex(float(X),float(Y),float(Z))
-        except ValueError, detail:
-            print "  Error parsing region.ladder.ladderview (Value:",vct,") : ",detail
+        except ValueError as detail:
+            print("  Error parsing region.ladder.ladderview (Value:",vct,") : ",detail)
 
         matrix = getMatrix(obj)
 
-        print matrix
-        rotpart = matrix.rotationPart()
-        rotmatrix = rotpart.resize4x4()
-        rotmatrix.transpose()
+        print(matrix)
+        rotMatrix = matrix.copy()
+        rotMatrix.translation = mathutils.Vector((0,0,0))
+        #rotmatrix.transpose()
         m = hsMatrix44()
         m.set(rotmatrix)
         v.transform(m)
@@ -2308,39 +2305,40 @@ class plAvLadderMod(plSingleModifier):
         self.fLadderView = v # assign to Direction Vector
 
 
-        print "   Ladder View: ",self.fLadderView
+        print("   Ladder View: ",self.fLadderView)
 
         if str(FindInDict(objscript,"region.ladder.direction","down")).lower() == "up":
-            print "   Direction: Up"
+            print("   Direction: Up")
             self.fGoingUp = True
         elif str(getTextPropertyOrDefault(obj,"direction","down")).lower() == "up":
-            print "   Direction: Up"
+            print("   Direction: Up")
             self.fGoingUp = True
         else:
-            print "   Direction: Down"
+            print("   Direction: Down")
             self.fGoingUp = False
 
         style = str(FindInDict(objscript,"region.ladder.style","big")).lower()
         style = str(getTextPropertyOrDefault(obj,"style",style)).lower()
         if style == "fourfeet":
-            print "   Style: Four Feet"
+            print("   Style: Four Feet")
             self.fType == plAvLadderMod.fTypeField["kFourFeet"]
         elif style == "twofeet":
-            print "   Style: Two Feet"
+            print("   Style: Two Feet")
             self.fType == plAvLadderMod.fTypeField["kTwoFeet"]
         else: #if style == 'big' or anything else...
-            print "   Style: Big"
+            print("   Style: Big")
             self.fType = plAvLadderMod.fTypeField["kBig"]
 
         self.fLoops = FindInDict(objscript,"region.ladder.loops",self.fLoops)
         self.fLoops = getIntPropertyOrDefault(obj,"loops",self.fLoops)
-        print "   Number of loops:",self.fLoops
+        print("   Number of loops:",self.fLoops)
 
 
     def export_raw(self,matrix,Type,Loops,GoingUp=0):
         # calculate the approximate Direction vector
-        rotMatrix = matrix.rotationPart().resize4x4()
-        v = Blender.Mathutils.Vector(0,-1,0,1) # vector describing -Y axis
+        rotMatrix = matrix.copy()
+        rotMatrix.translation = mathutils.Vector((0,0,0))
+        v = mathutils.Vector((0,-1,0,1)) # vector describing -Y axis
         v = v * rotMatrix  # transform the vector accoring to object matrix
         self.fLadderView.setVector(v) # assign to Direction Vector
         self.fLoops = Loops
@@ -2354,4 +2352,4 @@ class plAvLadderMod(plSingleModifier):
         scnobj.data.data2.append(laddermod.data.getRef())
 
     Export = staticmethod(_Export)
-
+    

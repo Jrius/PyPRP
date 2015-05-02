@@ -1,4 +1,3 @@
-#!BPY
 #
 #    Copyright (C) 2008  Guild of Writers PyPRP Project Team
 #    See the file AUTHORS for more info about the team
@@ -19,45 +18,35 @@
 #
 #    Please see the file LICENSE for the full license.
 
-"""
-Name: 'PyPRP'
-Blender: 243
-Group: 'Add'
-Submenu: 'Create a New Book' i_book
-Submenu: 'Create a New SpawnPoint' i_swpoint
-Submenu: 'Add a (Generic) Logic Region' i_region
-Submenu: 'Add a Footstep Sound Region' i_footstepregion
-Submenu: 'Add a Panic Link Region' i_paniclnkregion
-Tooltip: 'GoW PyPRP'
-"""
+# This script is now called by ExportOperator.py
 
-__author__ = "GoW PyPRP Team"
-__url__ = ("blender", "elysiun",
-"Author's homepage, http://www.guildofwriters.com")
-__version__ = "GoW PRP Exporter"
+#"""
+#Name: 'PyPRP'
+#Blender: 243
+#Group: 'Add'
+#Submenu: 'Create a New Book' i_book
+#Submenu: 'Create a New SpawnPoint' i_swpoint
+#Submenu: 'Add a (Generic) Logic Region' i_region
+#Submenu: 'Add a Footstep Sound Region' i_footstepregion
+#Submenu: 'Add a Panic Link Region' i_paniclnkregion
+#Tooltip: 'GoW PyPRP'
+#"""
 
-__bpydoc__ = """\
-This script attempts to provide easy Age Writing options to be used in URU.
-"""
-
-from PyPRP import prp_Config
+import prp_Config
 prp_Config.startup()
 
-import Blender, time, sys, os
-from Blender import NMesh
-from Blender.BGL import *
-from Blender.Draw import *
+import time, sys, os
 from os.path import *
-from PyPRP.prp_ResManager import *
-from PyPRP.prp_AlcScript import *
-from PyPRP.prp_Functions import *
+from bpy import *
+from prp_ResManager import *
+from prp_AlcScript import *
+from prp_Functions import *
 
 import math
 from math import *
 
 def new_book():
-	print "Creating default Book..."
-	txt=alcFindBlenderText("Book")
+	txt=alcFindBlenderTextNofail("Book")
 	txt.clear()
 	txt.write("""age:
 	sequenceprefix: 100
@@ -73,55 +62,42 @@ def new_book():
 config:
 	agesdlhook: true
 	""")
-	print "Done."
-	print "Setting default Funny settings..."
-	txt=alcFindBlenderText("init")
+	txt=alcFindBlenderTextNofail("init")
 	txt.clear()
-	txt.write("#--Fog settings--\n#Graphics.Renderer.SetYon float yon\n#Visibility distance\nGraphics.Renderer.SetYon 100000\n\n#Graphics.Renderer.Fog.SetDefLinear float start, float end, float density\n#Fog depth\nGraphics.Renderer.Fog.SetDefLinear 1 1000 1\n\n#Graphics.Renderer.Fog.SetDefExp2 float end, float density\n#Graphics.Renderer.Fog.SetDefExp2 100000 20\n\n#Graphics.Renderer.Fog.SetDefColor float r, float g, float b\nGraphics.Renderer.Fog.SetDefColor 0 0 0\n\n#Graphics.Renderer.SetClearColor float r, float g, float b\nGraphics.Renderer.SetClearColor 0 0 0\n")
-	print "Done."
-	print "Setting default AlcScript settings..."
-	txt=alcFindBlenderText("AlcScript")
+	txt.write("""# --Fog settings--
+
+# Visibility distance
+Graphics.Renderer.SetYon 10000
+
+# Fog depth (distance to start, distance to end, overall density)
+Graphics.Renderer.Fog.SetDefLinear 100 10000 1
+
+# Alternative (exponential) fog (distance to end, overall density)
+# Graphics.Renderer.Fog.SetDefExp2 100000 20
+
+# Fog color (red, green, blue - in range 0-1 )
+# color when nothing is displayed
+Graphics.Renderer.Fog.SetDefColor .5 .6 .9
+# color to tint objects
+Graphics.Renderer.SetClearColor .5 .6 .9
+""")
+	txt=alcFindBlenderTextNofail("AlcScript")
 	txt.clear()
 	txt.write("""# insert AlcScript code here""")
-	print "Done. Book successfully created!"
 
 def new_point():
-    print "Adding a new SpawnPoint"
     alcCreateLinkInPoint()
-    Blender.Redraw()
+    bpy.context.scene.update()
 
 def new_region():
-    print "Adding a new General Region"
     alcCreateRegion()
-    Blender.Redraw()
+    bpy.context.scene.update()
 
 def new_footstepregion():
-    print "Adding a new Footstep Sound Region"
     alcCreateFootstepRegion()
-    Blender.Redraw()
+    bpy.context.scene.update()
 
 def new_paniclnkregion():
-    print "Adding a new Panic Link Region"
     alcCreatePanicLnkRegion()
-    Blender.Redraw()
+    bpy.context.scene.update()
 
-def do_main():
-    args = __script__['arg']
-    w = args.split("_")
-    if w[1]=="book":
-        new_book()
-    elif w[1]=="swpoint":
-        new_point()
-    elif w[1]=="region":
-        new_region()
-    elif w[1]=="footstepregion":
-        new_footstepregion()
-    elif w[1]=="paniclnkregion":
-        new_paniclnkregion()
-
-    else:
-        raise "Unknown options %s" %(w)
-
-
-#Main code
-do_main()

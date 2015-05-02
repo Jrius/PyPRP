@@ -17,18 +17,17 @@
 #
 #    Please see the file LICENSE for the full license.
 
-import dircache
 import os
 from os.path import *
 from binascii import *
-import StringIO
+import io
 from prp_Types import *
 from prp_File import *
 from prp_ResManager import *
 
 def extract(what):
     prp = PrpFile()
-    f=file(what,"rb")
+    f=open(what,"rb")
     prp.read(f)
     f.close()
     m=basename(what).split(".")
@@ -37,12 +36,12 @@ def extract(what):
         out = m[0]
     else:
         out = base + "/" + m[0]
-    print out
+    print(out)
     try:
         os.mkdir(out)
     except OSError:
         pass
-    meta = file(out + "/" + "meta.dat","w")
+    meta = open(out + "/" + "meta.dat","w")
     meta.write("agename = %s\n" % str(prp.name))
     meta.write("pagename = %s\n" % str(prp.page))
     meta.write("pagetype = %i\n" % prp.page_type)
@@ -70,8 +69,8 @@ def extract(what):
             name=name.replace("\"","_")
             name=name.replace("|","_")
             name=name.strip()
-            print "Writting %s" %name
-            f=file(cur + "/" + name + ".raw","wb")
+            print("Writing %s" %name)
+            f=open(cur + "/" + name + ".raw","wb")
             o.write(f)
             f.close()
 
@@ -85,8 +84,8 @@ def assemble(what,ia=0,fast=0):
         out = m
     else:
         out = base + "/" + m
-    print out
-    meta = file(out + "/" + "meta.dat")
+    print(out)
+    meta = open(out + "/" + "meta.dat")
     for line in meta.readlines():
         w = line.strip().split("=")
         x = w[0].strip()
@@ -104,7 +103,7 @@ def assemble(what,ia=0,fast=0):
     if ia:
         if prp.page_type in (0x04,0x00):
             prp.createSceneNode()
-    f=dircache.listdir(out)
+    f=os.listdir(out)
     for i in f:
         p=out + "/" + i
         if not isdir(p):
@@ -119,13 +118,13 @@ def assemble(what,ia=0,fast=0):
         idx.parent=prp
         if fast:
             type=0xFFFF
-        k=dircache.listdir(p)
+        k=os.listdir(p)
         for j in k:
             #print p,j
             if j[-4:]!=".raw":
                 continue
-            f=file(p + "/" + j,"rb")
-            buf=StringIO.StringIO()
+            f=open(p + "/" + j,"rb")
+            buf=io.BytesIO()
             buf.write(f.read())
             f.close()
             size=buf.tell()
@@ -141,8 +140,8 @@ def assemble(what,ia=0,fast=0):
     if ia:
         if prp.page_type in (0x04,0x00):
             prp.updateSceneNode()
-    buf=file(what + ".prp","wb")
-    print "writting %s (please wait several minutes)" %what
+    buf=open(what + ".prp","wb")
+    print("writing %s (please wait several minutes)" %what)
     prp.write(buf)
     buf.close()
 
@@ -166,15 +165,15 @@ def extract_prp(path):
             pagename=was[len(agename) + 1:]
             version=6
     else:
-        raise "Unsupported format %s" %ext
+        raise RuntimeError("Unsupported format %s" %ext)
     extract_age(agename,basepath,pagename,version)
 
 
 def extract_age(agename,basepath,pagename=None,version=5):
     if pagename!=None:
-        print "Extracting page %s from age %s" %(pagename,agename)
+        print("Extracting page %s from age %s" %(pagename,agename))
     else:
-        print "Extracting age %s" %agename
+        print("Extracting age %s" %agename)
     #print basepath
     rmgr=alcResManager(basepath)
     rmgr.setFilesystem()

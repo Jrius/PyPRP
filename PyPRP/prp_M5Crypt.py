@@ -23,9 +23,9 @@ try:
     cryptoworks=1
 except ImportError:
     cryptoworks=0
-    print "WARNING: Python Crypto Toolkit not found!, support for Myst 5 files is disabled!!"
+    print("WARNING: Python Crypto Toolkit not found!, support for Myst 5 files is disabled!!")
 
-import struct, cStringIO, glob
+import struct, io, glob
 
 class NotM5Crypt(Exception):
     def __init__(self,val):
@@ -39,11 +39,11 @@ class M5Crypt:
         self.off=0
         self.name=""
         self.mode="r"
-        key1 = 0xFC2C6B86L
-        key2 = 0x952E7BDAL
-        key3 = 0xF1713EE8L
-        key4 = 0xC7410A13L
-        xorkey = 0xCF092676L
+        key1 = 0xFC2C6B86
+        key2 = 0x952E7BDA
+        key3 = 0xF1713EE8
+        key4 = 0xC7410A13
+        xorkey = 0xCF092676
         key1 = key1 ^ xorkey
         key2 = key2 ^ xorkey
         key3 = key3 ^ xorkey
@@ -56,12 +56,12 @@ class M5Crypt:
             raise NotM5Crypt
         if mode=="r" or mode=="rb":
             self.mode="r"
-            f=file(name,"rb")
-            self.buf=cStringIO.StringIO()
+            f=open(name,"rb")
+            self.buf=io.BytesIO()
             magic, self.size = struct.unpack("II",f.read(8))
             if magic!=0x0D874288:
                 f.close()
-                raise NotM5Crypt, "That is not a Myst5 encrypted file!"
+                raise NotM5Crypt("That is not a Myst5 encrypted file!")
             off=0
             cb = AES.new(self.key)
             out = cb.decrypt(f.read())
@@ -72,9 +72,9 @@ class M5Crypt:
         elif mode=="w" or mode=="wb":
             self.mode="w"
             self.name=name
-            self.buf=cStringIO.StringIO()
+            self.buf=io.BytesIO()
         else:
-            print "Unsuported file mode!"
+            print("Unsuported file mode!")
             raise RuntimeError
 
 
@@ -99,7 +99,7 @@ class M5Crypt:
 
     def close(self):
         if self.mode=="w":
-            f=file(self.name,"wb")
+            f=open(self.name,"wb")
             f.write(struct.pack("II",0x0D874288,self.size))
             off=0
             cb = AES.new(self.key)
@@ -117,12 +117,12 @@ class M5Crypt:
 def m5decrypt(what):
     magic, size = struct.unpack("II",what.read(8))
     if magic!=0x0D874288:
-        raise "That is not a Myst5 encrypted file!"
-    key1 = 0xFC2C6B86L
-    key2 = 0x952E7BDAL
-    key3 = 0xF1713EE8L
-    key4 = 0xC7410A13L
-    xorkey = 0xCF092676L
+        raise RuntimeError("That is not a Myst5 encrypted file!")
+    key1 = 0xFC2C6B86
+    key2 = 0x952E7BDA
+    key3 = 0xF1713EE8
+    key4 = 0xC7410A13
+    xorkey = 0xCF092676
     key1 = key1 ^ xorkey
     key2 = key2 ^ xorkey
     key3 = key3 ^ xorkey
@@ -137,11 +137,11 @@ def m5crypt(what,out):
     what.read()
     size = what.tell()
     out.write(struct.pack("II",0x0D874288,size))
-    key1 = 0xFC2C6B86L
-    key2 = 0x952E7BDAL
-    key3 = 0xF1713EE8L
-    key4 = 0xC7410A13L
-    xorkey = 0xCF092676L
+    key1 = 0xFC2C6B86
+    key2 = 0x952E7BDA
+    key3 = 0xF1713EE8
+    key4 = 0xC7410A13
+    xorkey = 0xCF092676
     key1 = key1 ^ xorkey
     key2 = key2 ^ xorkey
     key3 = key3 ^ xorkey
@@ -159,11 +159,11 @@ def m5crypt(what,out):
 ##
 ##for infile in input:
 ##
-##    f = file(infile,"rb")
+##    f = open(infile,"rb")
 ##    out=m5decrypt(f)
 ##    f.close()
 ##
-##    f2 = file(infile + ".dec","wb")
+##    f2 = open(infile + ".dec","wb")
 ##    f2.write(out)
 ##    f2.close()
 
@@ -174,24 +174,24 @@ def m5crypt(what,out):
 ##    f=M5Crypt()
 ##    f.open(infile,"r")
 ##
-##    f2 = file(infile + ".dec","wb")
+##    f2 = open(infile + ".dec","wb")
 ##    f2.write(f.read())
 ##    f.close()
 ##    f2.close()
 
 ##
-##    f = file(infile,"rb")
+##    f = open(infile,"rb")
 ##    out=m5decrypt(f)
 ##    f.close()
 ##
-##    f2 = file(infile + ".dec","wb")
+##    f2 = open(infile + ".dec","wb")
 ##    f2.write(out)
 ##    f2.close()
 
-##f = file("out.pak","rb")
-##f2 = file("out2.pak","wb")
+##f = open("out.pak","rb")
+##f2 = open("out2.pak","wb")
 ##
-##f3=cStringIO.StringIO()
+##f3=cBytesIO.BytesIO()
 ##f3.write(f.read())
 ##f.close()
 ##

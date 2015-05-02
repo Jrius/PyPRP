@@ -17,7 +17,7 @@
 #
 #    Please see the file LICENSE for the full license.
 
-import os, time, md5, struct
+import os, time, hashlib, struct
 from os.path import *
 from prp_Stream import *
 from prp_Types import *
@@ -28,8 +28,8 @@ try:
     cryptoworks=1
 except ImportError:
     cryptoworks=0
-    print "WARNING: Python Crypto Toolkit not found!,\
-    You need to install it to be able to generate valid manifest files for Alcugs Dataservers"
+    print("WARNING: Python Crypto Toolkit not found!,\
+    You need to install it to be able to generate valid manifest files for Alcugs Dataservers")
 
 class mfsfile:
     def __init__(self,name):
@@ -57,15 +57,16 @@ class mfs:
     def addFile(self,filename):
         fullpath=filename
         filename=basename(filename)
-        for f in self.files:
-            if f.name==file:
-                return
+        #for f in self.files:
+        #    if f.name==file: ## wtf ???
+        #        return
         f=mfsfile(filename)
         f.fullpath=fullpath
         self.files.append(f)
 
 
     def update(self):
+        return
         for f in self.files:
             ext=f.name[-4:]
             if ext in [".age",".fni",".csv"]:
@@ -93,7 +94,7 @@ class mfs:
             f.mtime=status.st_mtime
             #print "Computing checksum for %s" %f.fullpath
             read=file(f.fullpath,"rb")
-            md5obj=md5.new()
+            md5obj=hashlib.md5()
             chunk="x"
             while chunk!="":
                 chunk=read.read(4096)

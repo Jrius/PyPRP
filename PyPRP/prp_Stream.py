@@ -17,25 +17,21 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-except ImportError:
-    pass
-
+from bpy import *
 try:
     import Crypto
     from Crypto.Cipher import AES
     cryptoworks=1
 except ImportError:
     cryptoworks=0
-    print "WARNING: Python Crypto Toolkit not found!, support for Myst 5 files is disabled!!"
+    print("WARNING: Python Crypto Toolkit not found!, support for Myst 5 files is disabled!!")
 
-import struct, cStringIO, glob
+import struct, io, glob, mathutils
 from prp_Types import *
 
 class hsStream:
     def __init__(self,fl,mode="rb"):
-        self.fs = file(fl,mode)
+        self.fs = open(fl,mode)
 
     #-Read Functions-#
     def ReadBool(self):
@@ -97,7 +93,7 @@ class hsStream:
 
     def ReadVector(self):
         vx,vy,vz, = struct.unpack("<fff",self.fs.read(12))
-        return Blender.Mathutils.Vector(vx,vy,vz)
+        return mathutils.Vector(vx,vy,vz)
 
 
     #-Write Functions-#
@@ -166,7 +162,10 @@ class hsStream:
 
 
     def write(self,data):
-        self.fs.write(data)
+        if type(data) == type(""):
+            self.fs.write(bytes(data, 'ascii'))
+        else:
+            self.fs.write(data)
 
 
     def close(self):
@@ -188,7 +187,7 @@ class Wdys:
         self.buf=""
         self.size=0
         self.off=0
-        self.base=0xC6EF3720L
+        self.base=0xC6EF3720
         self.max=4294967296
         self.crossRef=(0x6C0A5452,0x03827D0F,0x3A170B92,0x16DB7FC2)
         self.name=""
@@ -198,13 +197,13 @@ class Wdys:
     def open(self,name,mode="r"):
         if mode=="r" or mode=="rb":
             self.mode="r"
-            f=file(name,"rb")
-            self.buf=cStringIO.StringIO()
+            f=open(name,"rb")
+            self.buf=io.BytesIO()
             check=f.read(12)
             if check!="whatdoyousee":
-                print "Not a WhatDoYouSee file!? Let's try BriceIsSmart..."
+                print("Not a WhatDoYouSee file!? Let's try BriceIsSmart...")
                 if check!="BriceIsSmart":
-                    raise NotWdys, "Not a WhatDoYouSee/BriceIsSmart file... WTF!!!"
+                    raise NotWdys("Not a WhatDoYouSee/BriceIsSmart file... WTF!!!")
             self.size,=struct.unpack("<I",f.read(4))
             off=0
             while off<self.size:
@@ -218,9 +217,9 @@ class Wdys:
         elif mode=="w" or mode=="wb":
             self.mode="w"
             self.name=name
-            self.buf=cStringIO.StringIO()
+            self.buf=io.BytesIO()
         else:
-            print "Unsuported file mode!"
+            print("Unsuported file mode!")
             raise RuntimeError
 
 
@@ -236,9 +235,12 @@ class Wdys:
         return self.buf.read(size)
 
 
-    def write(self,str):
-        self.buf.write(str)
-        self.size+=len(str)
+    def write(self,strING):
+        if type(strING) == type(""):
+            self.buf.write(strING.encode('ascii'))
+        else:
+            self.buf.write(strING)
+        self.size+=len(strING)
         pass
 
     def Write16(self,data):
@@ -252,8 +254,8 @@ class Wdys:
 
     def close(self):
         if self.mode=="w":
-            f=file(self.name,"wb")
-            f.write("whatdoyousee")
+            f=open(self.name,"wb")
+            f.write(bytes("whatdoyousee", 'ascii')) ## I think ?...
             #self.size=len(self.buf)
             f.write(struct.pack("<I",self.size))
             off=0
@@ -356,11 +358,11 @@ class M5Crypt:
         self.off=0
         self.name=""
         self.mode="r"
-        key1 = 0xFC2C6B86L
-        key2 = 0x952E7BDAL
-        key3 = 0xF1713EE8L
-        key4 = 0xC7410A13L
-        xorkey = 0xCF092676L
+        key1 = 0xFC2C6B86
+        key2 = 0x952E7BDA
+        key3 = 0xF1713EE8
+        key4 = 0xC7410A13
+        xorkey = 0xCF092676
         key1 = key1 ^ xorkey
         key2 = key2 ^ xorkey
         key3 = key3 ^ xorkey
@@ -373,12 +375,12 @@ class M5Crypt:
             raise NotM5Crypt
         if mode=="r" or mode=="rb":
             self.mode="r"
-            f=file(name,"rb")
-            self.buf=cStringIO.StringIO()
+            f=open(name,"rb")
+            self.buf=io.BytesIO()
             magic, self.size = struct.unpack("<II",f.read(8))
             if magic!=0x0D874288:
                 f.close()
-                raise NotM5Crypt, "That is not a Myst5 encrypted file!"
+                raise NotM5Crypt("That is not a Myst5 encrypted file!")
             off=0
             cb = AES.new(self.key)
             out = cb.decrypt(f.read())
@@ -389,9 +391,9 @@ class M5Crypt:
         elif mode=="w" or mode=="wb":
             self.mode="w"
             self.name=name
-            self.buf=cStringIO.StringIO()
+            self.buf=io.BytesIO()
         else:
-            print "Unsuported file mode!"
+            print("Unsuported file mode!")
             raise RuntimeError
 
 
@@ -418,7 +420,7 @@ class M5Crypt:
 
     def close(self):
         if self.mode=="w":
-            f=file(self.name,"wb")
+            f=open(self.name,"wb")
             f.write(struct.pack("<II",0x0D874288,self.size))
             off=0
             cb = AES.new(key)
@@ -436,12 +438,12 @@ class M5Crypt:
 def m5decrypt(what):
     magic, size = struct.unpack("<II",what.read(8))
     if magic!=0x0D874288:
-        raise "That is not a Myst5 encrypted file!"
-    key1 = 0xFC2C6B86L
-    key2 = 0x952E7BDAL
-    key3 = 0xF1713EE8L
-    key4 = 0xC7410A13L
-    xorkey = 0xCF092676L
+        raise RuntimeError("That is not a Myst5 encrypted file!")
+    key1 = 0xFC2C6B86
+    key2 = 0x952E7BDA
+    key3 = 0xF1713EE8
+    key4 = 0xC7410A13
+    xorkey = 0xCF092676
     key1 = key1 ^ xorkey
     key2 = key2 ^ xorkey
     key3 = key3 ^ xorkey
@@ -456,11 +458,11 @@ def m5crypt(what,out):
     what.read()
     size = what.tell()
     out.write(struct.pack("<II",0x0D874288,size))
-    key1 = 0xFC2C6B86L
-    key2 = 0x952E7BDAL
-    key3 = 0xF1713EE8L
-    key4 = 0xC7410A13L
-    xorkey = 0xCF092676L
+    key1 = 0xFC2C6B86
+    key2 = 0x952E7BDA
+    key3 = 0xF1713EE8
+    key4 = 0xC7410A13
+    xorkey = 0xCF092676
     key1 = key1 ^ xorkey
     key2 = key2 ^ xorkey
     key3 = key3 ^ xorkey

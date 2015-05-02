@@ -19,12 +19,9 @@
 
 # Help library
 
-try:
-    import Blender
-except ImportError:
-    pass
-
-import struct, array, StringIO
+from bpy import *
+import mathutils
+import struct, array, io
 from prp_AbsClasses import *
 
 class hsMatrix33:
@@ -57,7 +54,7 @@ class hsMatrix33:
         c = [self.matrix[2][0],self.matrix[2][0],self.matrix[2][2]]
 
         try:
-            self.vmatrix = Blender.Mathutils.Matrix(a,b,c)
+            self.vmatrix = mathutils.Matrix((a,b,c))
         except NameError:
             pass
 
@@ -92,7 +89,7 @@ class hsMatrix44:
         c=[self.matrix[2][0],self.matrix[2][1],self.matrix[2][2],self.matrix[2][3]]
         d=[self.matrix[3][0],self.matrix[3][1],self.matrix[3][2],self.matrix[3][3]]
         try:
-            self.vmatrix=Blender.Mathutils.Matrix(a,b,c,d)
+            self.vmatrix=mathutils.Matrix((a,b,c,d))
         except NameError:
             pass
 
@@ -383,7 +380,7 @@ class Vertex:
         self.z = vector.z
 
     def getVector(self):
-        return Blender.Mathutils.Vector(self.x,self.y,self.z,1)
+        return mathutils.Vector(self.x,self.y,self.z,1)
 
 
 class Vertex4:
@@ -456,7 +453,7 @@ class hsQuat:
         self.w = quat.w
 
     def getQuat(self):
-        return Blender.Mathutils.Quaternion(self.w,self.x,self.y,self.z)
+        return mathutils.Quaternion(self.w,self.x,self.y,self.z)
 
 class hsBounds:
     def __init__(self):
@@ -1075,8 +1072,8 @@ class plCullPoly:
  
     def export_face(self, verts, normal):
         self.fNorm.setVector(normal)
-        self.fDist = -Blender.Mathutils.DotVecs(verts[0], normal)
-        center = Blender.Mathutils.Vector()
+        self.fDist = -mathutils.DotVecs(verts[0], normal)
+        center = mathutils.Vector()
         for v in verts:
             center += v
         center /= len(verts)

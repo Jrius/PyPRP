@@ -323,11 +323,11 @@ class PrpObject:
         buf.seek(offset)
         self.data.validation=verify
         if True: # Handy debuggin tool, but not very useful to users....
-            print "[Type: 0x%x]"%(self.type)
+            print("[Type: 0x%x]"%(self.type))
 
         try:
             self.data.read(buf,size)
-        except TypeError,detail:
+        except TypeError as detail:
             #print "Hmm, typeerror:",detail
             self.data.read(buf)
 
@@ -340,8 +340,8 @@ class PrpObject:
             if self.type!=0xFFFF:
                 assert(self.type==self.data.Key.object_type)
         if buf.tell()-offset!=size:
-            print "WARNING: %s %i of %iunparsed bytes!" %(self.data.Key.name,size-(buf.tell()-offset),size)
-            raise RuntimeError, "%s %i off %iunparsed bytes" %(self.data.Key.name,size-(buf.tell()-offset),size)
+            print("WARNING: %s %i of %iunparsed bytes!" %(self.data.Key.name,size-(buf.tell()-offset),size))
+            raise RuntimeError("%s %i off %iunparsed bytes" %(self.data.Key.name,size-(buf.tell()-offset),size))
 
 
     def write(self,buf):
@@ -505,7 +505,7 @@ class PrpFileInfo:
     def read(self,buf):
         self.version, = struct.unpack("<H",buf.read(2))
         if self.version not in[0x05,0x06]:
-            raise RuntimeError, "Unsuported Prp version %i!"%self.version
+            raise RuntimeError("Unsuported Prp version %i!"%self.version)
         if self.version==0x06: #myst5
             count, = struct.unpack("<H",buf.read(2))
             for i in range(count):
@@ -526,7 +526,7 @@ class PrpFileInfo:
             district=Ustr("",self.version)
             district.read(buf)
             if str(district)!="District":
-                raise RuntimeError,"Not a district"
+                raise RuntimeError("Not a district")
         self.page.setType(self.version)
         self.page.read(buf)
         if self.version==0x06:

@@ -19,7 +19,7 @@
 
 
 
-import struct
+import struct, mathutils
 from prp_GeomClasses import *
 from prp_Types import *
 from prp_Stream import *
@@ -57,10 +57,10 @@ class PrpVolumeIsect:
             elif self.vitype == 0x02F5:
                 self.data = plConvexIsect(self)
             else:
-                print "Unsupported volume i-sect type %04X" % self.vitype
+                print("Unsupported volume i-sect type %04X" % self.vitype)
         elif self.version == 6:
             #Myst 5 types
-            raise RuntimeError, "Unsupported Myst 5 volume i-sect type %04X" % self.type
+            raise RuntimeError("Unsupported Myst 5 volume i-sect type %04X" % self.type)
 
 
     def read(self,buf):
@@ -110,10 +110,10 @@ class plVolumeIsect:
 
 class plConvexPlane:
     def __init__(self):
-        self.Normal = Blender.Mathutils.Vector(1,0,0)
-        self.Point = Blender.Mathutils.Vector(0,0,0)
+        self.Normal = mathutils.Vector((1,0,0))
+        self.Point = mathutils.Vector((0,0,0))
         self.Distance = 0
-        self.ScaledNormal = Blender.Mathutils.Vector(1,0,0)
+        self.ScaledNormal = mathutils.Vector((1,0,0))
         self.ScaledDist = 0
 
     def read(self,buf):
@@ -136,13 +136,13 @@ class plConvexPlane:
         self.Normal *= -1
         # Determine the axis that is closest to the normal, and choose
         # another axis
-        xAxis = Blender.Mathutils.Vector(1,0,0)
-        yAxis = Blender.Mathutils.Vector(0,1,0)
-        zAxis = Blender.Mathutils.Vector(0,0,1)
+        xAxis = mathutils.Vector((1,0,0))
+        yAxis = mathutils.Vector((0,1,0))
+        zAxis = mathutils.Vector((0,0,1))
         vNormal = self.Normal
-        xDot = abs(Blender.Mathutils.DotVecs(xAxis,vNormal))
-        yDot = abs(Blender.Mathutils.DotVecs(yAxis,vNormal))
-        zDot = abs(Blender.Mathutils.DotVecs(zAxis,vNormal))
+        xDot = abs(xAxis.dot(vNormal))
+        yDot = abs(yAxis.dot(vNormal))
+        zDot = abs(zAxis.dot(vNormal))
         vOther = None
         if (xDot > yDot):
             vOther = yAxis
@@ -150,10 +150,10 @@ class plConvexPlane:
             vOther = xAxis
 
         # Form one vector in the plane
-        planeAxis1 = Blender.Mathutils.CrossVecs(vNormal,vOther).normalize()
+        planeAxis1 = vNormal.cross(vOther).normalize()
 
         # Form a second vector in the plane
-        planeAxis2 = Blender.Mathutils.CrossVecs(planeAxis1,vNormal).normalize()
+        planeAxis2 = planeAxis1.cross(vNormal).normalize()
 
         # Determine four points in the plane, and add them to
         # the face
@@ -189,18 +189,18 @@ class plConvexIsect(plVolumeIsect):
     def createObject(self,name,page=0):
         sobj = None
         try:
-            sobj = Blender.Mesh.Get(name)
+            sobj = bpy.data.meshes[name]
         except:
             if sobj == None and len(self.vPlanes) > 0:
-                print "Creating soft volume scene object %s using %d planes" % (name,len(self.vPlanes))
-                obj = Blender.Mesh.New(name)
+                print("Creating soft volume scene object %s using %d planes" % (name,len(self.vPlanes)))
+                obj = bpy.data.meshes.new(name)
                 for plane in self.vPlanes:
                     plane.addFaceToMesh(obj)
 
-                scene = Blender.Scene.GetCurrent()
+                scene = bpy.context.scene
                 sobj = scene.objects.new(obj,name)
-                sobj.select(False)
-                sobj.setName(name)
+                sobj.select = False
+                sobj.name = name
                 sobj.layers = [6,]
                 sobj.drawType = 2
                 sobj.addProperty("type","svconvex")
@@ -210,20 +210,21 @@ class plConvexIsect(plVolumeIsect):
 
     def export_object(self, obj):
         tmatrix = getMatrix(obj)
-        tmatrix.transpose()
-        for face in obj.data.faces:
-            if (len(face.v) > 0):
+        #tmatrix.transpose()
+        for face in obj.data.polygons:
+            if (len(face.vertices) > 0):
                 # reversed uru space
-                Nor = tmatrix.rotationPart().invert().transpose() * Blender.Mathutils.Vector(face.no) * -1
+                #Nor = tmatrix.rotationPart().invert().transpose() * mathutils.Vector(face.no) * -1
+                Nor = tmatrix.to_3x3().inverted() * mathutils.Vector(face.normal) * -1
                 Nor.normalize()
                 # transform verts into world space (transposed for uru's reversed space)
-                Pos = tmatrix * Blender.Mathutils.Vector(face.v[0].co.x, face.v[0].co.y, face.v[0].co.z)
+                Pos = tmatrix * obj.data.vertices[face.vertices[0]].co # 1 vertex is enough to position the plane
                 self.AddPlane(Nor, Pos)
 
     def AddPlane(self, Nor, Pos):
         for curPlane in self.vPlanes:
-            if Blender.Mathutils.DotVecs(curPlane.Normal, Nor) >= 0.9999:
-                dist = Blender.Mathutils.DotVecs(Nor, Pos)
+            if curPlane.Normal.dot(Nor) >= 0.9999:
+                dist = Nor.dot(Pos)
                 if dist > curPlane.Distance:
                     curPlane.Distance = dist
                     curPlane.Point = Pos
@@ -231,7 +232,7 @@ class plConvexIsect(plVolumeIsect):
         plane = plConvexPlane()
         plane.Normal = Nor
         plane.Point = Pos
-        plane.Distance = Blender.Mathutils.DotVecs(Nor, Pos)
+        plane.Distance = Nor.dot(Pos)
         plane.ScaledNormal = plane.Normal
         plane.ScaledDist = plane.Distance
         self.vPlanes.append(plane)
@@ -257,7 +258,7 @@ class alcSoftVolumeParser:
             theChar = propString[i]
             if theChar != ' ':
                 newPropString += theChar
-        print "Parsing the softvolume property %s" % propString
+        print("Parsing the softvolume property %s" % propString)
         # invoke the recursive method
         self.index = 0
         return self._parseProperty(newPropString, rootName)
@@ -265,7 +266,7 @@ class alcSoftVolumeParser:
     def isStringProperty(self, propString):
         firstChar = propString[0]
         if firstChar == '(':
-            raise "Unexpected '(' found in softvolume property '%s'" % propString
+            raise RuntimeError("Unexpected '(' found in softvolume property '%s'" % propString)
         #secondChar = propString[1]
         if ((firstChar == 'U') or (firstChar == 'I') or (firstChar == '!')):# and (secondChar == '('):
             return True
@@ -278,7 +279,7 @@ class alcSoftVolumeParser:
         else:
             firstChar = propString[0]
             if firstChar == '(':
-                raise "Unexpected '(' found in softvolume property '%s' of %s - please correct it" %(propString,rootName)
+                raise RuntimeError("Unexpected '(' found in softvolume property '%s' of %s - please correct it" %(propString,rootName))
             secondChar = propString[1]
             if secondChar != '(':
                 isSimple = True
@@ -293,7 +294,7 @@ class alcSoftVolumeParser:
                 elif firstChar == '!':
                     isInverse = True
                 else:
-                    raise "Illegal character '%s' found before the ( in softvolume property of %s; must be either 'U', 'I' or '!'" %(firstChar,rootName)
+                    raise RuntimeError("Illegal character '%s' found before the ( in softvolume property of %s; must be either 'U', 'I' or '!'" %(firstChar,rootName))
                 svRefs = []
                 newIndex = 2
                 reachedParen = False
@@ -308,7 +309,7 @@ class alcSoftVolumeParser:
                             break
                 self.index = newIndex
                 if not reachedParen:
-                    raise "Error: missing a ')' in softvolume property '%s' of %s" %(propString,rootName)
+                    raise RuntimeError("Error: missing a ')' in softvolume property '%s' of %s" %(propString,rootName))
                 complexSV = None
                 if isUnion == True:
                     #tempname = alcUniqueName(rootName + "Union",0,0,'union')
@@ -323,7 +324,7 @@ class alcSoftVolumeParser:
                     #complexSV = self.prp.find(0x008C,tempname,1)
                     complexSV = self.prp.find(0x008C,rootName,1)
                 if complexSV == None:
-                    raise "Error: could not create a complex soft volume for %s" % rootName
+                    raise RuntimeError("Error: could not create a complex soft volume for %s" % rootName)
                 for svRef in svRefs:
                     complexSV.data.vSV7C.append(svRef)
                 return complexSV.data.getRef()
@@ -338,10 +339,10 @@ class alcSoftVolumeParser:
             simpleSV = None
             for sv in self.simpleSVs:
                 if (str(sv.Key.name) == simpleSVName):
-                    print "Found softvolume %s" % sv.Key.name
+                    print("Found softvolume %s" % sv.Key.name)
                     simpleSV = sv
                     break
             if simpleSV == None:
-                raise "Could not locate soft volume '%s' - please correct the softvolume property in %s" %(simpleSVName,rootName)
+                raise RuntimeError("Could not locate soft volume '%s' - please correct the softvolume property in %s" %(simpleSVName,rootName))
             return simpleSV
         return None

@@ -17,17 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_Types import *
 from prp_DXTConv import *
 from prp_HexDump import *
@@ -95,7 +86,7 @@ class plPostEffectMod(plSingleModifier):
         script = AlcScript.objects.Find(obj.name)
 
         m = getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         self.fC2W.set(m)
         m.invert()
         self.fW2C.set(m)

@@ -17,17 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_Types import *
 from prp_DXTConv import *
 from prp_HexDump import *
@@ -69,8 +60,8 @@ def RunQuickScripts(obj):
     objscript = AlcScript.objects.Find(obj.name)
 
     if result:
-        print "Quickscripted", obj.name
-        print "To:",objscript,"\n"
+        print("Quickscripted", obj.name)
+        print("To:",objscript,"\n")
 
 
 def QuickScript_Footstep(obj):
@@ -90,7 +81,7 @@ def QuickScript_Footstep(obj):
                 surfaces = [surface,]
 
         if not surfaces is None and type(surfaces) == list:
-            print "  [QuickScript - Footstep]"
+            print("  [QuickScript - Footstep]")
 
             # Force the object to type region if needed
             if alctype != "region":
@@ -152,8 +143,8 @@ def QuickScript_Footstep(obj):
             acttxt += "    flags:\n"
             acttxt += "      - detecttrigger\n"
 
-            print "Resulting Code for .logic.modifiers:\n",modtxt
-            print "Resulting Code for .logic.actions:\n",acttxt
+            print("Resulting Code for .logic.modifiers:\n",modtxt)
+            print("Resulting Code for .logic.actions:\n",acttxt)
 
             # Parse the code
             myactscript = AlcScript(acttxt).GetRootScript()
@@ -198,7 +189,7 @@ def QuickScript_SoundRegion(obj):
         oneway = getTextPropertyOrDefault(obj,"oneway",oneway)
 
         if not emitters is None and type(emitters) == list:
-            print "  [QuickScript - SoundRegion]"
+            print("  [QuickScript - SoundRegion]")
 
             # Force the object to type region if needed
             if alctype != "region":
@@ -291,8 +282,8 @@ def QuickScript_SoundRegion(obj):
                 acttxt += "      flags:\n"
                 acttxt += "        - detecttrigger\n"
 
-            print "Resulting Code for .logic.modifiers:\n",modtxt
-            print "Resulting Code for .logic.actions:\n",acttxt
+            print("Resulting Code for .logic.modifiers:\n",modtxt)
+            print("Resulting Code for .logic.actions:\n",acttxt)
 
             # Parse the code
             myactscript = AlcScript(acttxt).GetRootScript()
@@ -334,7 +325,7 @@ def QuickScript_SelfAnimationRegion(obj):
         animtarget = FindInDict(objscript,"quickscript.selfanimation.animtarget",animtarget)
 
         if rgntype == "logic" and not animation is None and type(animation) == str:
-            print "  [QuickScript - SelfAnimation]"
+            print("  [QuickScript - SelfAnimation]")
 
             # Build up the required script
 
@@ -361,8 +352,8 @@ def QuickScript_SelfAnimationRegion(obj):
             if not animtarget is None:
                 acttxt += "    remote: " + str(animtarget) + "\n"
 
-            print "Resulting Code for .logic.modifiers:\n",modtxt
-            print "Resulting Code for .logic.actions:\n",acttxt
+            print("Resulting Code for .logic.modifiers:\n",modtxt)
+            print("Resulting Code for .logic.actions:\n",acttxt)
 
             # Parse the code
             myactscript = AlcScript(acttxt).GetRootScript()
@@ -420,14 +411,13 @@ def QuickScript_SDL(obj):
     return False
 
 # add BoolShowHide
-def QuickScript_SDLBoolShowHide(obj,sdlscript):
-    print "  [QuickScript - SDLBoolShowHide]"
+def QuickScript_SDLBoolShowHide(obj, sdlscript):
+    print("  [QuickScript - SDLBoolShowHide]")
     objscript = AlcScript.objects.FindOrCreate(obj.name)
 
     sdlname = FindInDict(sdlscript, "name", None)
     if not sdlname:
         sdlname =  str(obj.name) + "Vis"
-
     acttxt  = "- type: pythonfile\n"
     acttxt += "  tag: BoolShowHide\n"
     acttxt += "  pythonfile:\n"
@@ -438,7 +428,7 @@ def QuickScript_SDLBoolShowHide(obj,sdlscript):
     acttxt += "        - type: bool\n"
     acttxt += "          value: true\n"
 
-    print "Resulting Code for .logic.actions:\n",acttxt
+    print("Resulting Code for .logic.actions:\n",acttxt)
 
     myactscript = AlcScript(acttxt).GetRootScript()
 
@@ -454,7 +444,7 @@ def QuickScript_SDLBoolShowHide(obj,sdlscript):
 
 # add RandomBool
 def QuickScript_RandomBool(obj,sdlscript):
-    print "  [QuickScript - RandomBool]"
+    print("  [QuickScript - RandomBool]")
     objscript = AlcScript.objects.FindOrCreate(obj.name)
 
     region = FindInDict(sdlscript,"region",None)
@@ -523,8 +513,8 @@ def QuickScript_RandomBool(obj,sdlscript):
         acttxt += "          value: true\n"
 
 
-        print "Resulting Code for .logic.modifiers:\n",modtxt
-        print "Resulting Code for .logic.actions:\n",acttxt
+        print("Resulting Code for .logic.modifiers:\n",modtxt)
+        print("Resulting Code for .logic.actions:\n",acttxt)
 
         # Parse the code
         myactscript = AlcScript(acttxt).GetRootScript()
@@ -551,7 +541,7 @@ def QuickScript_RandomBool(obj,sdlscript):
 
 # add IntActEnabler
 def QuickScript_SDLIntActEnabler(obj):
-    print "  [QuickScript - SDLIntActEnabler]"
+    print("  [QuickScript - SDLIntActEnabler]")
     objscript = AlcScript.objects.FindOrCreate(obj.name)
 
     # Check for clickable quickscripts!
@@ -559,7 +549,7 @@ def QuickScript_SDLIntActEnabler(obj):
     stateanimation = FindInDict(objscript,"quickscript.stateanimation",None)
 
     if simpleclick is None and stateanimation is None:
-        print "No simpleclick or stateanimation quickscript for " + str(obj.name) + ": Abort SDLIntActEnabler\n"
+        print("No simpleclick or stateanimation quickscript for " + str(obj.name) + ": Abort SDLIntActEnabler\n")
         return False
 
     acttxt  = "- type: pythonfile\n"
@@ -578,7 +568,7 @@ def QuickScript_SDLIntActEnabler(obj):
     acttxt += "        - type: string\n"
     acttxt += "          value: 1\n"
 
-    print "Resulting Code for .logic.actions:\n",acttxt
+    print("Resulting Code for .logic.actions:\n",acttxt)
 
     myactscript = AlcScript(acttxt).GetRootScript()
 
@@ -626,7 +616,7 @@ def QuickScript_SimpleClickable(obj):
         emitvolume = FindInDict(emitscript,"sound.volume",1)
 
     if not region is None:
-        print "  [QuickScript - Simple Clickable]"
+        print("  [QuickScript - Simple Clickable]")
         # Force the object's physical logic to 'detect'
         StoreInDict(objscript,"physical.physlogic","detect")
             # Build up the required script
@@ -761,8 +751,8 @@ def QuickScript_SimpleClickable(obj):
             acttxt += "       - detecttrigger\n"
 
 
-        print "Resulting Code for .logic.modifiers:\n",modtxt
-        print "Resulting Code for .logic.actions:\n",acttxt
+        print("Resulting Code for .logic.modifiers:\n",modtxt)
+        print("Resulting Code for .logic.actions:\n",acttxt)
 
         # Parse the code
         myactscript = AlcScript(acttxt).GetRootScript()
@@ -823,7 +813,7 @@ def QuickScript_StateAnimation(obj):
         if region is None or sdlname is None:
             return False
 
-        print "  [QuickScript - State Animation]"
+        print("  [QuickScript - State Animation]")
         # Force the object's physical logic to 'detect'
         StoreInDict(objscript,"physical.physlogic","detect")
             # Build up the required script
@@ -1141,8 +1131,8 @@ def QuickScript_StateAnimation(obj):
             acttxt += "       - detecttrigger\n"
 
 
-        print "Resulting Code for .logic.modifiers:\n",modtxt
-        print "Resulting Code for .logic.actions:\n",acttxt
+        print("Resulting Code for .logic.modifiers:\n",modtxt)
+        print("Resulting Code for .logic.actions:\n",acttxt)
 
         # Parse the code
         myactscript = AlcScript(acttxt).GetRootScript()
@@ -1188,7 +1178,7 @@ def QuickScript_StateAnimation(obj):
                 acttxt += "  oneshot:\n"
                 acttxt += "      animation: " + str(avanimation) + "\n"
 
-                print "Resulting Code for " + str(animtarget) + ".logic.actions:\n",acttxt
+                print("Resulting Code for " + str(animtarget) + ".logic.actions:\n",acttxt)
 
                 # Parse the code
                 myactscript = AlcScript(acttxt).GetRootScript()

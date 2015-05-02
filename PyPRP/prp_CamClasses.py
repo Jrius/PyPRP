@@ -17,17 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_Types import *
 from prp_DXTConv import *
 from prp_HexDump import *
@@ -60,9 +51,9 @@ class CamTrans:
         self.fPOAVelocity = 60.0
 
     def read(self,stream):
-        print "w"
+        print("w")
         self.fTransTo.read(stream)
-        print "v"
+        print("v")
         self.fCutPos = stream.ReadBool()
         self.fCutPOA = stream.ReadBool()
         self.fIgnore = stream.ReadBool()
@@ -162,13 +153,13 @@ class plCameraModifier1(plSingleModifier):    # actually descends from plSingleM
 
 
         try:
-            print "Y"
+            print("Y")
 
             for i in range(count):
                 Msg = PrpMessage.FromStream(stream)
                 self.fMessageQueue.add(Msg.data)
 
-            print "Z"
+            print("Z")
 
             for msg in self.fMessageQueue:
                 msg.fSender.read(stream)
@@ -180,14 +171,14 @@ class plCameraModifier1(plSingleModifier):    # actually descends from plSingleM
                 Msg = PrpMessage.FromStream(stream)
                 self.fFOVInstructions.append(FovMsg.data)
 
-        except ValueError, detail:
-            print "/---------------------------------------------------------"
-            print "|  WARNING:"
-            print "|   Got Value Error:" , detail, ":"
-            print "|   Skipping message arrays of plCameraModifier1..."
-            print "|   -> Skipping %i bytes ahead " % ( (start + size -4) - stream.tell())
-            print "|   -> Total object size: %i bytes"% (size)
-            print "\---------------------------------------------------------\n"
+        except ValueError as detail:
+            print("/---------------------------------------------------------")
+            print("|  WARNING:")
+            print("|   Got Value Error:" , detail, ":")
+            print("|   Skipping message arrays of plCameraModifier1...")
+            print("|   -> Skipping %i bytes ahead " % ( (start + size -4) - stream.tell()))
+            print("|   -> Total object size: %i bytes"% (size))
+            print("\---------------------------------------------------------\n")
 
             stream.seek(start + size - 4) #reposition the stream to read in the last 4 bytes
 
@@ -251,7 +242,7 @@ class plCameraModifier1(plSingleModifier):    # actually descends from plSingleM
     def export_obj(self,obj):
         root = self.getRoot()
 
-        print "Exporting Camera Modifier Object"
+        print("Exporting Camera Modifier Object")
 
         # --- Find the camera's script object ----
         objscript = AlcScript.objects.Find(obj.name)
@@ -260,16 +251,16 @@ class plCameraModifier1(plSingleModifier):    # actually descends from plSingleM
         self.fAnimated = FindInDict(objscript,"camera.animated",False)
 
         # --------- FOV --------------
-        if(obj.data.getType() == 0): # check for perspective camera
+        if(obj.data.type == 0): # check for perspective camera
             lens = obj.data.getLens()
-            print "Calculating FOV for lens is %i mm" % lens
+            print("Calculating FOV for lens is %i mm" % lens)
 
             self.fFOVh = 2 * math.atan(32/(2*lens)) * (360/(2*math.pi))
 
             self.fFOVw = self.fFOVh / 0.750 # I divide by 0.750 becaus I hope it's more accurate than multiplying by 1.33
         else:
             #default them to default values (45:33.75):
-            print "Camera is not perpective - please changeit to perspective"
+            print("Camera is not perpective - please changeit to perspective")
             pass
 
 
@@ -285,7 +276,7 @@ class plCameraModifier1(plSingleModifier):    # actually descends from plSingleM
         if scriptbrain in ["fixed","circle","avatar","firstperson","simple"]:
             cambraintype = scriptbrain
 
-        print " Camera Brain: %s" % cambraintype
+        print(" Camera Brain: %s" % cambraintype)
 
         # determine the camera brain
         if(cambraintype == "fixed"):
@@ -517,7 +508,7 @@ class plCameraBrain1(hsKeyedObject):
 
 
     def export_obj(self,obj):
-        print "Exporting CameraBrain1"
+        print("Exporting CameraBrain1")
 
 
         # ------ Obtain the AlcScript Object ------
@@ -556,8 +547,8 @@ class plCameraBrain1(hsKeyedObject):
         try:
             X,Y,Z, = poa.split(',')
             self.fPOAOffset = Vertex(float(X),float(Y),float(Z))
-        except ValueError, detail:
-            print "  Error parsing camera.brain.poa (Value:",poa,") : ",detail
+        except ValueError as detail:
+            print("  Error parsing camera.brain.poa (Value:",poa,") : ",detail)
 
         flags = FindInDict(objscript,"camera.brain.flags",None)
         if type(flags) == list:
@@ -567,7 +558,7 @@ class plCameraBrain1(hsKeyedObject):
                     idx =  plCameraBrain1.ScriptFlags[flag.lower()]
                     self.fFlags.SetBit(idx)
         else:
-            print "  No camera flags list, setting default"
+            print("  No camera flags list, setting default")
             self.fFlags.SetBit(plCameraBrain1.Flags["kFollowLocalAvatar"])
 
 
@@ -624,7 +615,7 @@ class plCameraBrain1_Fixed(plCameraBrain1):
 
     def export_obj(self,obj):
         plCameraBrain1.export_obj(self,obj)
-        print "Exporting CameraBrain1_Fixed"
+        print("Exporting CameraBrain1_Fixed")
         # ------ Obtain the AlcScript Object ------
         objscript = AlcScript.objects.Find(obj.name)
         # ------ Conintue if it's set ------
@@ -741,7 +732,7 @@ class plCameraBrain1_Circle(plCameraBrain1_Fixed):
 
         flaglist = []
 
-        for flag in plCameraBrain1_Circle.ScriptCircleFlags.keys():
+        for flag in list(plCameraBrain1_Circle.ScriptCircleFlags.keys()):
             if self.fCicleFlags & plCameraBrain1_Circle.ScriptCircleFlags[flag] > 0:
                 flaglist.append(flag)
 
@@ -756,11 +747,11 @@ class plCameraBrain1_Circle(plCameraBrain1_Fixed):
         # get the matrices
         LocalToWorld=hsMatrix44()
         m=getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         LocalToWorld.set(m)
 
         # convert the clip-end to the Center point of the camera
-        if obj.getType() == 'Camera':
+        if obj.type == 'Camera':
             clip_end = obj.data.getClipEnd()
             self.fCenter = Vertex(0,0,0 - clip_end) # camera points to local -Z
             self.fCenter.transform(LocalToWorld)
@@ -839,8 +830,8 @@ class plCameraBrain1_Avatar(plCameraBrain1):
         try:
             X,Y,Z, = offset.split(',')
             self.fOffset = Vertex(float(X),float(Y),float(Z))
-        except ValueError, detail:
-            print "  Error parsing camera.brain.offset (Value:",offset,") : ",detail
+        except ValueError as detail:
+            print("  Error parsing camera.brain.offset (Value:",offset,") : ",detail)
 
 
 class plCameraBrain1_FirstPerson(plCameraBrain1_Avatar):
@@ -926,7 +917,7 @@ class plPostEffectMod(plSingleModifier):
         script = AlcScript.objects.Find(obj.name)
         
         m = getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         self.fC2W.set(m)
         m.invert()
         self.fW2C.set(m)

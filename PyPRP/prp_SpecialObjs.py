@@ -19,12 +19,8 @@
 
 # Help library
 
-try:
-    import Blender
-except ImportError:
-    pass
-
-import dircache, os, StringIO
+from bpy import *
+import os, io
 from os.path import *
 from binascii import *
 from prp_AlcScript import *
@@ -110,7 +106,7 @@ class alcBook:
                     typeflags = FindInDict(_page,'flags',[])
                     if type(typeflags) == list:
                         for flag in typeflags:
-                            if alcBook.PageFlags.has_key(flag.lower()):
+                            if flag.lower() in alcBook.PageFlags:
                                 pagetype |= alcBook.PageFlags[flag.lower()]
 
                     # And add the page..
@@ -142,7 +138,7 @@ class alcBook:
         if not value is None:
             StoreInDict(self.book,"sequenceprefix",value)
 
-        if self.age.attach.has_key('AgeSDLHook') and self.age.attach['AgeSDLHook'] == True:
+        if 'AgeSDLHook' in self.age.attach and self.age.attach['AgeSDLHook'] == True:
             StoreInDict(self.globals,"agesdlhook",True)
         else:
             StoreInDict(self.globals,"agesdlhook",False)
@@ -157,7 +153,7 @@ class alcBook:
 
                 if page.type > 0:
                     pagedict['flags'] = []
-                    for flag in alcBook.PageFlags.keys():
+                    for flag in list(alcBook.PageFlags.keys()):
                         if page.type & alcBook.PageFlags[flag]:
                             pagedict['flags'].append(flag)
 

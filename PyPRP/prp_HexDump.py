@@ -24,17 +24,17 @@ import string
 def hexdump(what):
     x=0
     y=0
-    print "    ",
+    print("    ")
     for i in range(0x10):
-        print " %X" % i,
-    print ""
+        print(" %X" % i)
+    print("")
     info=""
     rinfo=""
     for a in what:
         if x==0:
-            print "%04X" %y,
+            print("%04X" %y)
         i=struct.unpack("B",a)
-        print "%02X" % i,
+        print("%02X" % i)
         z,=struct.unpack("B",a)
         z=struct.pack("B",z ^ 0xFF)
         if a=="\n" or not a in string.printable:
@@ -47,16 +47,16 @@ def hexdump(what):
         if x==0x10:
             x=0
             y=y+1
-            print info + " " + rinfo
+            print(info + " " + rinfo)
             info=""
             rinfo=""
     if x!=0x10:
         for i in range(x,0x10):
-            print "  ",
-        print info,
+            print("  ")
+        print(info)
         for i in range(x,0x10):
-            print "",
-        print rinfo
+            print("")
+        print(rinfo)
 
 
 #hexdump("aeiou \nasdfghijklmnopqrstuvwxyz" )

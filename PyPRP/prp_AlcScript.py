@@ -22,11 +22,7 @@
 
 import sys, os
 import yaml
-
-try:
-    import Blender
-except ImportError:
-    pass
+from bpy import *
 
 from prp_Functions import *
 
@@ -56,15 +52,15 @@ class AlcScript:
 
     def Read(self,text):
         if AlcScript.Debug:
-            print "Parsing Content..."
-            print text
-            print "---"
+            print("Parsing Content...")
+            print(text)
+            print("---")
 
         self.content = yaml.safe_load(text)
 
         if AlcScript.Debug:
-            print "Parsed result: "
-            print self.content
+            print("Parsed result: ")
+            print(self.content)
 
     def Write(self):
         return self.WritePart(self.content)
@@ -74,11 +70,11 @@ class AlcScript:
         NoIndent = AlreadyIndented
         if type(data) == dict:
             #print "\nDict:",data,"\n"
-            keys = data.keys()
+            keys = list(data.keys())
             keys.sort()
             for key in keys:
                 # Ignore empty dictionaries
-                if not (type(data[key]) == dict and len(data[key].keys()) == 0):
+                if not (type(data[key]) == dict and len(list(data[key].keys())) == 0):
                     if not NoIndent:
                         s += "\n"
                         for i in range(level):
@@ -104,7 +100,7 @@ class AlcScript:
                 data.sort()
             for item in data:
                 # Ignore empty dictionaries
-                if not (type(item) == dict and len(item.keys()) == 0):
+                if not (type(item) == dict and len(list(item.keys())) == 0):
                     if not NoIndent:
                         s += "\n"
                         for i in range(level):
@@ -133,13 +129,13 @@ class AlcScript:
         if type(self.content) == list:
             # if the items were specifies in a "- name:" fasion, it gets in a list, so spit through those lists...
             for item in self.content:
-                for key in item.keys():
+                for key in list(item.keys()):
                     if key == name:
                         return item[key]
             return None # if not found
         else: # type(self.content) == dict:
             # just look through the dict's keys
-            for key in self.content.keys():
+            for key in list(self.content.keys()):
                 if key == name:
                     return self.content[key]
 
@@ -173,7 +169,7 @@ class AlcScript:
 
     ## Static functions - used to obtain the blender text, and store it to the blender text,
     def _StoreToBlender():
-        print "Storing AlcScript to Blender"
+        print("Storing AlcScript to Blender")
         if not AlcScript.objects is None:
             blendtext = alcFindBlenderText(AlcScript.ObjectTextFileName)
             blendtext.clear()
@@ -188,14 +184,14 @@ class AlcScript:
 
 
     def _LoadFromBlender():
-        print "[AlcScript Parser]"
+        print("[AlcScript Parser]")
 
         if AlcScript.Debug:
-            print " Contents of AlcScript:"
+            print(" Contents of AlcScript:")
         blendtext = alcFindBlenderText(AlcScript.ObjectTextFileName)
         txt=""
-        for line in blendtext.asLines():
-            txt=txt + line + "\n"
+        for line in blendtext.lines:
+            txt=txt + line.body + "\n"
         text = txt.expandtabs(4) # replace any tabs by 4 spaces, since yaml doesn't accept tabs, and blender tabs are 4 spaces
         AlcScript.objects = AlcScript(text)
 
@@ -203,11 +199,11 @@ class AlcScript:
             AlcScript.objects = AlcScript()
 
         if AlcScript.Debug:
-            print " Contents of Book:"
+            print(" Contents of Book:")
         blendtext = alcFindBlenderText(AlcScript.BookTextFileName)
         txt=""
-        for line in blendtext.asLines():
-            txt=txt + line + "\n"
+        for line in blendtext.lines:
+            txt=txt + line.body + "\n"
         text = txt.expandtabs(4) # replace any tabs by 4 spaces, since yaml doesn't accept tabs, and blender tabs are 4 spaces
         AlcScript.book = AlcScript(text)
 
@@ -248,10 +244,10 @@ def FindInDict(dct,params,default=None):
     elif type(params) == type(''):
         params = params.split(".")
     else:
-        raise ValueError, "FindInDict: 'params' is not a list, tuple or string"
+        raise ValueError("FindInDict: 'params' is not a list, tuple or string")
 
     if not type(dct) == dict:
-        raise ValueError, "FindInDict: 'dct' is not a dictionary object"
+        raise ValueError("FindInDict: 'dct' is not a dictionary object")
 
 
     value = dct
@@ -275,10 +271,10 @@ def StoreInDict(dct,params,value):
         try:
             params = str(params).split(".")
         except:
-            raise ValueError, "StoreInDict: 'params' is not a list, tuple or string"
+            raise ValueError("StoreInDict: 'params' is not a list, tuple or string")
 
     if not type(dct) == dict:
-        raise ValueError, "StoreInDict: 'dct' is not a dictionary object"
+        raise ValueError("StoreInDict: 'dct' is not a dictionary object")
 
     mydict = dct
 
@@ -287,17 +283,17 @@ def StoreInDict(dct,params,value):
             if type(mydict) == dict:
                 mydict[params[i]] = value
             else:
-                print "StoreInDict Not a Dictionary"
+                print("StoreInDict Not a Dictionary")
         else:
             if type(mydict) == dict:
-                if mydict.has_key(params[i]):
+                if params[i] in mydict:
                     if type(mydict[params[i]]) != dict:
                         mydict[params[i]] = {}
                 else:
                         mydict[params[i]] = {}
                 mydict = mydict[params[i]]
             else:
-                print "StoreInDict Error: Not a Dictionary"
+                print("StoreInDict Error: Not a Dictionary")
 
 # Some Debugging tools for AlcScript:
 if False:
@@ -315,28 +311,28 @@ arguments:
 
     """)
 
-    print "Contents of test1:"
-    print script.Find("test1")
+    print("Contents of test1:")
+    print(script.Find("test1"))
 
-    print "Result of rewrite:"
-    print script.Write()
+    print("Result of rewrite:")
+    print(script.Write())
 
 
     lst = list(FindInDict(script.GetRootScript(),"arguments",[]))
-    print lst
+    print(lst)
 
     for i in range(len(lst)):
-        print "---\nItem nr",i
-        print lst[i]
+        print("---\nItem nr",i)
+        print(lst[i])
 
-    print "----------------------"
+    print("----------------------")
 
     i = 0
     for itm in lst:
-        print "---\nItem nr",i
-        print itm
+        print("---\nItem nr",i)
+        print(itm)
         i += 1
 
-    print "\n----------------------\n"
+    print("\n----------------------\n")
 
 

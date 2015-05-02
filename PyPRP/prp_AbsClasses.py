@@ -17,11 +17,6 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-except ImportError:
-    pass
-
 import math, struct
 from prp_HexDump import *
 from prp_Types import *

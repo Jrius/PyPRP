@@ -40,19 +40,19 @@ __bpydoc__ = """\
 This script modifies/adds certain object properties of URU PRP objects.
 """
 
-from PyPRP import prp_Config
+import prp_Config
 prp_Config.startup()
 
-import Blender, time, sys, os
-from Blender import Object
+import time, sys, os
+from bpy import *
 from os.path import *
-from PyPRP.prp_Functions import *
-from PyPRP.prp_ResManager import *
+from prp_Functions import *
+from prp_ResManager import *
 
 
 def CopyProperties():
 
-    print "---------------"
+    print("---------------")
 
     # get the selected objects
     obj_list = Blender.Object.GetSelected()
@@ -63,15 +63,15 @@ def CopyProperties():
 
         for obj in obj_list:
             if(obj != mainobj):
-                print "From [%s] to [%s]" % (mainobj.name,obj.name)
+                print("From [%s] to [%s]" % (mainobj.name,obj.name))
                 for prop in prop_list:
                     try:
                         obj.addProperty(prop.name,prop.data)
-                        print " Copied property " + prop.name + " => " + prop.data
+                        print(" Copied property " + prop.name + " => " + prop.data)
                     except:
                         pass
     else:
-        print "Select Multiple objects for this to work..."
+        print("Select Multiple objects for this to work...")
 
 
 def deldefaultproperty(obj,propertyname,defaultvalue):
@@ -80,7 +80,7 @@ def deldefaultproperty(obj,propertyname,defaultvalue):
         if(p.getData() == defaultvalue):
             obj.removeProperty(p)
     except (AttributeError, RuntimeError):
-        print "Error removing %s property" % propertyname
+        print("Error removing %s property" % propertyname)
 
 
 
@@ -104,7 +104,7 @@ def do_main():
     elif w[1]=="ignore":
         ignoreTextures()
     else:
-        raise "Unknown options %s" %(w)
+        raise RuntimeError("Unknown options %s" %(w))
 
 
 

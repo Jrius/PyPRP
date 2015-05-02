@@ -17,19 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-        from Blender import Ipo
-        from Blender import BezTriple
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 import prp_Config
 import prp_AnimClasses
 from prp_Config import *
@@ -277,88 +266,9 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
             key.read(stream)
             self.fLayers.append(key)
 
-    ###################################
-    ##                               ##
-    ##      Interface Functions      ##
-    ##                               ##
-    ###################################
-    def ToBlenderMat(self,obj):
-        if self.blendermaterial != None:
-            return self.blendermaterial
-        print "    [Material %s]"%(str(self.Key.name))
-
-
-        resmanager=self.getResManager()
-        texprp=resmanager.findPrp("Textures")
-        root=self.getRoot()
-
-        # create the material to work on:
-        name = str(self.Key.name)
-        self.blendermaterial=Blender.Material.New(name)
-        mat=self.blendermaterial
-        matmode=mat.getMode()
-        mat.setMode(matmode)
-
-        texid = 0
-
-        for layerref in self.fLayers:
-            layer = root.findref(layerref)
-            if layer != None and layer.data.Key.object_type != 0x00F0: #plLayerSDLAnimation NIE
-                # -- Retrieve from layer some info for the blender material
-                ambientCol  = layer.data.fPreshadeColor
-                diffuseCol  = layer.data.fRuntimeColor
-                emitCol     = layer.data.fAmbientColor
-                specCol     = layer.data.fSpecularColor
-                mat.setAlpha(diffuseCol.a)
-                mat.setRGBCol([diffuseCol.r,diffuseCol.g,diffuseCol.b])
-                mat.setSpecCol([specCol.r,specCol.g,specCol.b])
-
-                try:
-                    emitfactor = emitCol.r / diffuseCol.r
-                except:
-                    emitfactor = 0.0
-                mat.setEmit(emitfactor)
-
-                try:
-                    ambfactor = ambientCol.r/ diffuseCol.r
-                except:
-                    ambfactor = 0.5
-                mat.setAmb(ambfactor)
-
-                if layer.data.fState.fShadeFlags | hsGMatState.hsGMatShadeFlags["kShadeNoFog"]:
-                    mat.mode |= Blender.Material.Modes['NOMIST']
-
-                # -- Retrieve layer specific date into textures
-                bitmap = None
-                if not layer.data.fTexture.isNull(): # if a texture image is associated Retrieve the layer from that
-
-                    # try to find it on the current page first....
-                    bitmap = root.findref(layer.data.fTexture)
-                    # and on the texture page if it isn't there..
-                    if bitmap is None and not texprp is None:
-                        bitmap = texprp.findref(layer.data.fTexture)
-
-                if bitmap != None:
-                    tex = bitmap.data.ToBlenderTex(str(layer.data.Key.name))
-                else:
-                    tex = Blender.Texture.New(str(layer.data.Key.name))
-                    tex.setType('None')
-
-                if tex != None and texid < 10:
-                    mat.setTexture(texid,tex,Blender.Texture.TexCo["UV"],Blender.Texture.MapTo["COL"])
-                    mtexlist = mat.getTextures()
-                    mtex = mtexlist[texid]
-
-                    if mtex != None:
-                        layer.data.ToBlenderMTex(mtex,obj)
-
-                    texid += 1
-
-        return mat
-
 
     def FromBlenderMat(self,mat,obj):
-        print "  [Material %s]"%(str(self.Key.name))
+        print("  [Material %s]"%(str(self.Key.name)))
         # mat is the material to convert
         # obj is the object the material links to - and only used to get the UV Maps
         self.blendermaterial=mat
@@ -366,7 +276,8 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
         name = str(self.Key.name)
         resmanager=self.getResManager()
         root=self.getRoot()
-        mesh = obj.getData(False,True)
+        #mesh = obj.getData(False,True)
+        mesh = obj.data
 
         # reset the flags to 00
         self.fFlags=0x00
@@ -374,31 +285,32 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
         # Loop through the MTex layers of Blender, and parse every one of them as a layer.
         if (mat): #avoid crashes if we acidentally ref this function without parameters
 
-#            if(obj.type == "Mesh" and (obj.data.mode & Blender.Mesh.Modes.TWOSIDED) > 0):
+#            if(obj.type == "MESH" and (obj.data.mode & Blender.Mesh.Modes.TWOSIDED) > 0):
  #               self.fCompFlags |= hsGMaterial.hsGCompFlags["kCompTwoSided"]
 
-            if mat.getSpec() > 0.0:
+            if not mat.use_shadeless and mat.specular_intensity > 0.0 and mat.specular_color != mathutils.Color((0.0, 0.0, 0.0)):
                 self.fCompFlags |= hsGMaterial.hsGCompFlags["kCompSpecular"]
 
             if name.lower().find("decal") != -1:
                 self.fCompFlags |= hsGMaterial.hsGCompFlags["kCompDecal"]
 
 
-            mtex_list = mat.getTextures()
+            mtex_list = mat.texture_slots
 
             layerlist = []
+            i=0
             for mtex in mtex_list:
                 if(mtex != None):
-                    if (mtex.tex.type == Blender.Texture.Types.BLEND or
-                        mtex.tex.type == Blender.Texture.Types.NONE or
-                        mtex.tex.type == Blender.Texture.Types.IMAGE or
-                        mtex.tex.type == Blender.Texture.Types.NOISE or
-                        mtex.tex.type == Blender.Texture.Types.ENVMAP):
+                    if (mtex.texture.type == "BLEND" or
+                        mtex.texture.type == "NONE"  or
+                        mtex.texture.type == "IMAGE" or
+                        mtex.texture.type == "NOISE" or
+                        mtex.texture.type == "ENVIRONMENT_MAP"):
 
                         # we hit a problem when two textures are shared, because the mtex is different per material.
                         # because of this. we'll prefix the material name, before the layer name
-                        ipo = mat.ipo
-                        channel = list(mtex_list).index(mtex)
+                        ipo = mat.animation_data
+                        channel = i
                         anim = False
 
                         if ipo != None:
@@ -406,8 +318,11 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                             if(len(ipo.curves) > 0):
                                 anim = True
 
-                        #layer = root.find(0x06,mat.name + "-" + mtex.tex.name,1)
-                        layerlist.append({"mtex":mtex,"stencil":mtex.stencil,"channel":channel,"anim":anim})
+                        #layer = root.find(0x06,mat.name + "-" + mtex.texture.name,1)
+                        layerlist.append({"mtex":mtex,"stencil":mtex.use_stencil,"channel":channel,"anim":anim})
+                    else:
+                        print("WARNING - texture type " + mtex.texture.type + " is not supported and will not be exported.")
+                i+=1
 
             i = 0
             while i < len(layerlist):
@@ -415,7 +330,7 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
 
                 if not layer_info["stencil"]:
                     mtex = layer_info["mtex"]
-                    layer = root.find(0x06,mat.name + "-" + mtex.tex.name,1)
+                    layer = root.find(0x06,mat.name + "-" + mtex.texture.name,1)
                     if(not layer.isProcessed):
                         layer.data.FromBlenderMTex(mtex,obj,mat)
                         layer.data.FromBlenderMat(obj,mat)
@@ -428,7 +343,7 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                             self.fLayers.append(layer.data.getRef())
                     else:
                         chan = layer_info["channel"]
-                        animlayer = root.find(0x0043,layer.data.getName(),1)
+                        animlayer = root.find(0x0043,layer.data.name,1)
                         animlayer.data.FromBlender(obj,mat,mtex,chan)
                         animlayer.data.fUnderlay = layer.data.getRef()
                         if layer.data.fState.fMiscFlags & hsGMatState.hsGMatMiscFlags["kMiscLightMap"]:
@@ -443,7 +358,7 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                         # Append the next layer first, and say that it has a stencil
                         layer_info = layerlist[i+1]
                         mtex = layer_info["mtex"]
-                        layer = root.find(0x06,mat.name + "-" + mtex.tex.name,1)
+                        layer = root.find(0x06,mat.name + "-" + mtex.texture.name,1)
                         if(not layer.isProcessed):
                             layer.data.FromBlenderMat(obj,mat)
                             layer.data.FromBlenderMTex(mtex,obj,mat,False,True)
@@ -454,7 +369,7 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                             self.fLayers.append(layer.data.getRef())
                         else:
                             chan = layer_info["channel"]
-                            animlayer = root.find(0x0043,layer.data.getName(),1)
+                            animlayer = root.find(0x0043,layer.data.name,1)
                             animlayer.data.FromBlender(obj,mat,mtex,chan)
                             animlayer.data.fUnderlay = layer.data.getRef()
                             self.fLayers.append(animlayer.data.getRef())
@@ -471,7 +386,7 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                             self.fLayers.append(mix.data.getRef())
                         else:
                             chan = mix_info["channel"]
-                            animlayer = root.find(0x0043,mix.data.getName(),1)
+                            animlayer = root.find(0x0043,mix.data.name,1)
                             animlayer.data.FromBlender(obj,mat,mtex,chan)
                             animlayer.data.fUnderlay = layer.data.getRef()
                             self.fLayers.append(animlayer.data.getRef())
@@ -490,20 +405,21 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                 layer=root.find(0x06,name + "_AutoLayer_",1)
 
                 # now see if we have a uvmapped texture on the object, and add this texture if needed
-                if(obj):
+                # DRAT THAT. People need to learn using materials sometime...
+                if(obj) and False:
                     # retrieve the corresponding mesh
                     meshName = obj.data.name
-                    mesh = Mesh.Get(meshName)
+                    mesh = bpy.data.meshes[meshName]
 
                     texture_img=None
-                    for f in mesh.faces:
+                    for f in mesh.polygons:
                         if mesh.faceUV and f.image!=None:
                             texture_img=f.image
                             break
                     if(texture_img != None):
                         #add the texture if it is there
                         layer.data.FromUvTex(texture_img,obj)
-                    layer.data.FromBlenderMat(obj,mat)
+                layer.data.FromBlenderMat(obj,mat)
 
                 self.fLayers.append(layer.data.getRef())
 
@@ -681,37 +597,14 @@ class plLayer(plLayerInterface):             # Type 0x06
         self.fPixelShader.write(stream)
         self.fBumpEnvXfm.write(stream)
 
-    ###################################
-    ##                               ##
-    ##      Interface Functions      ##
-    ##                               ##
-    ###################################
-
-    def ToBlenderMTex(self,mtex,obj):
-        print "     [Layer %s]"%(str(self.Key.name))
-        mtex.colfac = self.fOpacity
-        if self.fState.fBlendFlags & hsGMatState.hsGMatBlendFlags["kBlendInvertColor"]:
-           mtex.neg = True
-
-        # not working in blender 2.45, perhaps will do in a later version
-        if self.fState.fMiscFlags & hsGMatState.hsGMatMiscFlags["kMiscTwoSided"]:
-            mode = obj.data.getMode()
-            mode |= Blender.Mesh.Modes.TWOSIDED
-            obj.data.setMode()
-        else:
-            mode = obj.data.getMode()
-            mode &= Blender.Mesh.Modes.TWOSIDED
-            obj.data.setMode()
-
-        pass
-
     def FromBlenderMTex(self,mtex,obj,mat,stencil=False,hasstencil=False):
-        print "   [Layer %s]"%(str(self.Key.name))
+        print("   [Layer %s]"%(str(self.Key.name)))
         #prp is for current prp file... (though that should be obtainable from self.parent.prp)
         resmanager=self.getResManager()
         root=self.getRoot()
 
-        mesh = obj.getData(False,True)
+        #mesh = obj.getData(False,True)
+        mesh = obj.data
 
         exportTexturesToPrp = prp_Config.export_textures_to_page_prp
         try:
@@ -727,7 +620,7 @@ class plLayer(plLayerInterface):             # Type 0x06
         else:
             texprp=resmanager.findPrp("Textures")
         if texprp==None:
-            raise "Textures PRP file not found"
+            raise RuntimeError("Textures PRP file not found")
 
         mipmap = None
         qmap = None
@@ -735,21 +628,13 @@ class plLayer(plLayerInterface):             # Type 0x06
         if(mtex):
 
             # First Determine the UVW Source....
-            BlenderUVLayers = mesh.getUVLayerNames()
-
-            UVLayers = {}
-
-            # Build up a nice map here....
-            i = 0
-            for name in BlenderUVLayers:
-                UVLayers[name] = i
-                i += 1
+            UVLayers = mesh.uv_layers
 
             Use_Sticky = False
             # Loop through Layers To see which coorinate systems are used.
-            for _mtex in mat.getTextures():
+            for _mtex in mat.texture_slots:
                 if not _mtex is None:
-                    if _mtex.texco == Blender.Texture.TexCo["STICK"] and mesh.vertexUV:
+                    if _mtex.texture_coords == "STICK" and mesh.vertexUV:
                         Use_Sticky = True
 
             UVSticky = 0 # Setting Sticky gives you 1st uv layer if no Sticky Coords set...
@@ -757,48 +642,50 @@ class plLayer(plLayerInterface):             # Type 0x06
                 UVSticky = len(UVLayers)
 
             # Check out current mapping
-            if mtex.texco == Blender.Texture.TexCo["STICK"]:
-                print "    -> Using sticky mapping"
+            if mtex.texture_coords == "STICK":
+                print("    -> Using sticky mapping")
                 self.fUVWSrc = UVSticky
-            elif mtex.texco == Blender.Texture.TexCo["UV"]:
-                try:
-                    print "    -> Using UV map '%s'"%(mtex.uvlayer)
-                    self.fUVWSrc = UVLayers[mtex.uvlayer]
-                except:
-                    print "    -> Err, Using first UV map"
+            elif mtex.texture_coords == "UV":
+                print("    -> Using UV map '%s'"%(mtex.uv_layer))
+                i=0
+                self.fUVWSrc = -1
+                for uv in UVLayers:
+                    if uv.name == mtex.uv_layer:
+                        self.fUVWSrc = i
+                    i+=1
+                if self.fUVWSrc == -1:
+                    print("    -> Err, Using first UV map")
                     self.fUVWSrc = 0
-            elif mtex.texco == Blender.Texture.TexCo["OBJECT"]:
-                print "    -> Mapping as projection light"
+            elif mtex.texture_coords == "OBJECT":
+                print("    -> Mapping as projection light")
                 self.fUVWSrc = plLayerInterface.plUVWSrcModifiers["kUVWPosition"]
             else:
-                print "    -> Using default first UV map"
+                print("    -> Using default first UV map")
                 # Other mappings will make the map default to first uv map
                 self.fUVWSrc = 0
 
 
             # process the image
-            tex = mtex.tex
+            tex = mtex.texture
 
             #mtex type ENVMAP
-            if(tex.type == Blender.Texture.Types.ENVMAP):
-
-                # check
-                if(tex.stype != Blender.Texture.STypes.ENV_LOAD or tex.image == None):
-                    #raise "ERROR: Cannot set Environment map from static/anim render. Please render your EnvMap, save it, and then set the EnvMap to load your saved image!"
-                    print "WARNING: No texture image found, using dynamic environment map with default settings"
-                    qmap = plDynamicEnvMap.FindCreate(root, tex.getName())
+            if(tex.type == "ENVIRONMENT_MAP"):
+                if(tex.environment_map.source == "ANIMATED" or tex.image == None):
+                    print("Envmap: creating dynamic envmap")
+                    qmap = plDynamicEnvMap.FindCreate(root, tex.name)
                     qmap.data.export_obj(obj)
 
                 else:
+                    print("Envmap: creating static envmap")
                     #find or create the qmap
 
                     mipmapinfo = blMipMapInfo()
-                    mipmapinfo.fName = tex.image.getName()
+                    mipmapinfo.fName = tex.image.name
                     mipmapinfo.fMipMaps = True
                     mipmapinfo.fGauss = True
                     mipmapinfo.fResize = True
 
-                    qmap = plCubicEnvironMap.Export(root,tex.image.getName(),tex.image,mipmapinfo,exportTexturesToPrp)
+                    qmap = plCubicEnvironMap.Export(root,tex.image.name,tex.image,mipmapinfo,exportTexturesToPrp)
 
                 self.fTexture = qmap.data.getRef()
                 self.fHasTexture = 1
@@ -821,7 +708,7 @@ class plLayer(plLayerInterface):             # Type 0x06
 
                 pass
             #mtex type IMAGE
-            elif(tex.type == Blender.Texture.Types.IMAGE):
+            elif(tex.type == "IMAGE"):
                 # find or create the mipmap
 
                 if(tex.image):
@@ -829,10 +716,11 @@ class plLayer(plLayerInterface):             # Type 0x06
                     mipmapinfo = blMipMapInfo()
                     mipmapinfo.export_tex(tex)
 
-                    if stencil and (not Blender.Texture.ImageFlags["USEALPHA"]):
-                        mipmapinfo.fCalcAlpha = True
+                    # TODO - what is that ?
+                    #if stencil and (not Blender.Texture.ImageFlags["USEALPHA"]):
+                    #    mipmapinfo.fCalcAlpha = True
 
-                    mipmap=plMipMap.Export(root,tex.image.getName(),tex.image,mipmapinfo,exportTexturesToPrp)
+                    mipmap=plMipMap.Export(root,tex.image.name,tex.image,mipmapinfo,exportTexturesToPrp)
 
                     self.fTexture = mipmap.data.getRef()
                     self.fHasTexture = 1
@@ -841,99 +729,99 @@ class plLayer(plLayerInterface):             # Type 0x06
                     if (mipmap.data.FullAlpha or mipmap.data.OnOffAlpha):
                         self.UsesAlpha = True
 
-                    if tex.extend == Blender.Texture.ExtendModes["CLIP"]:
+                    if tex.extension == "CLIP":
                         self.fState.fClampFlags |= hsGMatState.hsGMatClampFlags["kClampTexture"]
 
                 pass
             #mtex type BLEND
             #Builds a linear AlphaBlend
-            elif(tex.type == Blender.Texture.Types.BLEND):
-                if mtex.tex.stype == Blender.Texture.STypes.BLN_LIN:
+            elif(tex.type == "BLEND"):
+                if mtex.texture.progression == "LINEAR":
                     # now create a blend, depending on whether it is horizontal or vertical:
-                    if(tex.flags & Blender.Texture.Flags.FLIPBLEND > 0):
+                    if(tex.use_flip_axis):
                         #Vertical blend
                         blendname = "ALPHA_BLEND_FILTER_V_LIN_64x64"
 
-                        blenddata = cStringIO.StringIO()
+                        blenddata = io.BytesIO()
                         blendwidth = 64
                         blendheight = 64
 
                         for y in range(blendheight,0,-1):
                             alpha = 255 *(float(y)/blendheight)
                             for x in range(0,blendwidth):
-                                blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                                blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
                     else:
                         #Horizontal blend
                         blendname = "ALPHA_BLEND_FILTER_U_LIN_64x64"
 
-                        blenddata = cStringIO.StringIO()
+                        blenddata = io.BytesIO()
                         blendwidth = 64
                         blendheight = 64
 
                         for y in range(blendheight,0,-1):
                             for x in range(0,blendwidth):
                                 alpha = 255 * (float(x)/blendwidth)
-                                blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                                blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
 
-                elif mtex.tex.stype == Blender.Texture.STypes.BLN_QUAD:
+                elif mtex.texture.progression == "QUADRATIC":
                     # now create a blend, depending on whether it is horizontal or vertical:
-                    if(tex.flags & Blender.Texture.Flags.FLIPBLEND > 0):
+                    if(tex.use_flip_axis):
                         #Vertical blend
                         blendname = "ALPHA_BLEND_FILTER_V_QUAD_64x64"
 
-                        blenddata = cStringIO.StringIO()
+                        blenddata = io.BytesIO()
                         blendwidth = 4
                         blendheight = 64
 
                         for y in range(blendheight,0,-1):
                             alpha = 255 * math.pow(float(y)/blendheight,2)
                             for x in range(0,blendwidth):
-                                blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                                blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
                     else:
                         #Horizontal blend
                         blendname = "ALPHA_BLEND_FILTER_U_QUAD_64x64"
 
-                        blenddata = cStringIO.StringIO()
+                        blenddata = io.BytesIO()
                         blendwidth = 64
                         blendheight = 4
 
                         for y in range(blendheight,0,-1):
                             for x in range(0,blendwidth):
                                 alpha = 255 * math.pow(float(x)/blendwidth,2)
-                                blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                                blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
 
-                elif mtex.tex.stype == Blender.Texture.STypes.BLN_EASE:
+                elif mtex.texture.progression == "EASING":
                     # now create a blend, depending on whether it is horizontal or vertical:
-                    if(tex.flags & Blender.Texture.Flags.FLIPBLEND > 0):
+                    if(tex.use_flip_axis):
                         #Vertical blend
                         blendname = "ALPHA_BLEND_FILTER_V_EASE_64x64"
 
-                        blenddata = cStringIO.StringIO()
+                        blenddata = io.BytesIO()
                         blendwidth = 4
                         blendheight = 64
 
                         for y in range(blendheight,0,-1):
                             alpha = 255 * (1 - (0.5 + (math.cos((float(y)/blendheight) * math.pi) * 0.5)))
                             for x in range(0,blendwidth):
-                                blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                                blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
                     else:
                         #Horizontal blend
                         blendname = "ALPHA_BLEND_FILTER_U_EASE_64x64"
 
-                        blenddata = cStringIO.StringIO()
+                        blenddata = io.BytesIO()
                         blendwidth = 64
                         blendheight = 4
 
                         for y in range(blendheight,0,-1):
                             for x in range(0,blendwidth):
                                 alpha = 255 * (1 - (0.5 + (math.cos( (float(x)/blendwidth) * math.pi) * 0.5)))
-                                blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                                blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
 
-                elif mtex.tex.stype == Blender.Texture.STypes.BLN_DIAG:
+                elif mtex.texture.progression == "DIAGONAL":
                     # Prepare the data for this object....
                     blendname = "ALPHA_BLEND_FILTER_DIAG_64x64"
 
-                    blenddata = cStringIO.StringIO()
+                    blenddata = io.BytesIO()
                     blendwidth = 64
                     blendheight = 64
 
@@ -942,13 +830,13 @@ class plLayer(plLayerInterface):             # Type 0x06
                             dist = math.sqrt(math.pow(x ,2) + math.pow(y,2))
                             alpha = 255 *(dist / math.sqrt(math.pow(blendwidth,2) + math.pow(blendheight,2)))
 
-                            blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                            blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
 
-                elif mtex.tex.stype == Blender.Texture.STypes.BLN_SPHERE:
+                elif mtex.texture.progression == "SPHERE":
                     # Prepare the data for this object....
                     blendname = "ALPHA_BLEND_FILTER_SPHERE_64x64"
 
-                    blenddata = cStringIO.StringIO()
+                    blenddata = io.BytesIO()
                     blendwidth = 64
                     blendheight = 64
 
@@ -960,13 +848,13 @@ class plLayer(plLayerInterface):             # Type 0x06
                                 alpha = 0
                             elif alpha > 255:
                                 alpha = 255
-                            blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                            blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
 
-                elif mtex.tex.stype == Blender.Texture.STypes.BLN_HALO:
+                elif mtex.texture.progression == "QUADRATIC_SPHERE":
                     # Prepare the data for this object....
                     blendname = "ALPHA_BLEND_FILTER_HALO_64x64"
 
-                    blenddata = cStringIO.StringIO()
+                    blenddata = io.BytesIO()
                     blendwidth = 64
                     blendheight = 64
 
@@ -978,23 +866,23 @@ class plLayer(plLayerInterface):             # Type 0x06
                                 alpha = 0
                             elif alpha > 255:
                                 alpha = 255
-                            blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                            blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
 
                 else: ## RADIAL TYPE
                     #
                     # Prepare the data for this object....
-                    if(tex.flags & Blender.Texture.Flags.FLIPBLEND > 0):
+                    if(tex.use_flip_axis):
                         blendname = "ALPHA_BLEND_FILTER_V_RADIAL_64x64"
                     else:
                         blendname = "ALPHA_BLEND_FILTER_U_RADIAL_64x64"
 
-                    blenddata = cStringIO.StringIO()
+                    blenddata = io.BytesIO()
                     blendwidth = 64
                     blendheight = 64
 
                     for y in range(blendheight,0,-1):
                         for x in range(0,blendwidth):
-                            if(tex.flags & Blender.Texture.Flags.FLIPBLEND > 0):
+                            if(tex.use_flip_axis):
                                 rely = x - (blendwidth/2)
                                 relx = y - (blendheight/2)
                             else:
@@ -1012,7 +900,7 @@ class plLayer(plLayerInterface):             # Type 0x06
                             alpha = 255 *(angle/(2*math.pi))
                             if alpha < 0:
                                 alpha = 0
-                            blenddata.write(struct.pack("BBBB",255,255,255,alpha))
+                            blenddata.write(struct.pack("BBBB",255,255,255,int(alpha)))
 
                 # Set clipping (clamping)
                 self.fState.fClampFlags |= hsGMatState.hsGMatClampFlags["kClampTexture"]
@@ -1033,17 +921,18 @@ class plLayer(plLayerInterface):             # Type 0x06
                 # alphablend layers do not affect blendflags (as far as we know now)
             
             
-            elif (tex.type == Blender.Texture.Types.NOISE):
-                print "[ plDynamicTextMap %s ]" % tex.getName()
-                tmap = plDynamicTextMap.FindCreate(root, tex.getName())
+            elif (tex.type == "NOISE"):
+                print("Tex type NOISE - exporting as dynamic text map.")
+                print("[ plDynamicTextMap %s ]" % tex.name)
+                tmap = plDynamicTextMap.FindCreate(root, tex.name)
                 tmap.data.export_obj(obj)
                 self.fTexture = tmap.data.getRef()
                 self.fHasTexture = 1
                 self.UsesAlpha = True
 
 
-            elif(tex.type == Blender.Texture.Types.NONE):
-                pass # don't do anything
+            else:
+                print("WARNING - texture type " + tex.type + " is not supported and will not be exported.")
 
 
             # now process additional mtex settings
@@ -1051,59 +940,64 @@ class plLayer(plLayerInterface):             # Type 0x06
 
             if not stencil:
                 # find the texture object, so we can get some values from it
-                if not mtex.texco == Blender.Texture.TexCo["OBJECT"]:
+                if not mtex.texture_coords == "OBJECT":
                     # first make a calculation of the uv transformation matrix.
-                    uvmobj = Blender.Object.New ('Empty')
+                    uvmobj = bpy.data.objects.new ('temp', None)
 
                     # now set the scale (and rotation) to the object
-                    uvmobj.SizeX = mtex.size[0]
-                    uvmobj.SizeY = mtex.size[1]
+                    uvmobj.scale[0] = mtex.scale[0]
+                    uvmobj.scale[1] = mtex.scale[1]
                     # map Blender offsets to Plasma offsets
-                    uvmobj.LocX = 0.5 - 0.5 * mtex.size[0] + mtex.ofs[0]
-                    uvmobj.LocY = 0.5 - 0.5 * mtex.size[1] - mtex.ofs[1]
+                    uvmobj.location[0] = 0.5 - 0.5 * mtex.scale[0] + mtex.offset[0]
+                    uvmobj.location[1] = 0.5 - 0.5 * mtex.scale[1] - mtex.offset[1]
                     uvm=getMatrix(uvmobj)
-                    uvm.transpose()
+                    del uvmobj
+                    #uvm.transpose()
                     self.fTransform.set(uvm)
 
-                self.fOpacity = mtex.colfac # factor how texture blends with color used as alpha blend value
+                self.fOpacity = mtex.diffuse_color_factor # factor how texture blends with color used as alpha blend value
+                if not mtex.use_map_color_diffuse:
+                    self.fOpacity = 1.
 
-                # See if any faces are set to double sided...
-                for mface in mesh.faces:
-                    if mface.uv and mface.mode & Blender.Mesh.FaceModes["TWOSIDE"]:
-                        self.fState.fMiscFlags  |= hsGMatState.hsGMatMiscFlags["kMiscTwoSided"]
-                        break
+                if mesh.show_double_sided:
+                    self.fState.fMiscFlags  |= hsGMatState.hsGMatMiscFlags["kMiscTwoSided"]
 
 
-                if(mtex.blendmode == Blender.Texture.BlendModes.ADD):
+                if(mtex.blend_type == "ADD"):
                     # self.fState.fBlendFlags |= ( hsGMatState.hsGMatBlendFlags["kBlendAdd"])
                     self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendAddColorTimesAlpha"] # This is better and more intuitive
-                    if mtex.mtAlpha != 0:
+                    if mtex.use_map_alpha:
                         self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendAlphaAdd"]
 
-                elif(mtex.blendmode == Blender.Texture.BlendModes.MULTIPLY):
+                elif(mtex.blend_type == "MULTIPLY"):
                     self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendMult"]
-                    if mtex.mtAlpha != 0:
+                    if mtex.use_map_alpha:
                         self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendAlphaMult"]
 
-                elif(mtex.blendmode == Blender.Texture.BlendModes.SUBTRACT):
+                elif(mtex.blend_type == "SUBTRACT"):
                     self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendSubtract"]
 
                 else: #(mtex.blendmode == Blender.Texture.BlendModes.MIX):
                     # Enable Normal Alpha Blending ONLY if the other alpha blend flags are not enabled
                     self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendAlpha"]
-                if(mtex.neg): # set the negate colors flag if it is so required
+                if(mtex.invert): # set the negate colors flag if it is so required
                     self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendInvertColor"]
                 
                 # PATCH by Tachzusamm - set kBlendAlphaTestHigh to remove alpha edge artifacts
-                if(tex.type == Blender.Texture.Types.IMAGE):
-                    if(tex.image):
-                        if(tex.image.premul):
-                            self.fState.fBlendFlags  |= hsGMatState.hsGMatBlendFlags["kBlendAlphaTestHigh"]
+                if(tex.type == "IMAGE"):
+                    if(mtex.use_map_alpha):
+                        # this was previously bound to Premultiply
+                        # But isn't it better to always enable it when using alpha ?
+                        self.fState.fBlendFlags  |= hsGMatState.hsGMatBlendFlags["kBlendAlphaTestHigh"]
 
-                if(mtex.mtHard):
+                # these are quite hacky - I have no other idea of what to bind them to...
+                if(mtex.use_map_hardness):
+                    # arg, nevermind - I doubt anyone will ever use it.
                     self.fState.fMiscFlags  |= hsGMatState.hsGMatMiscFlags["kMiscBindNext"] | hsGMatState.hsGMatMiscFlags["kMiscRestartPassHere"]
 
-                if(mtex.mtAmb):
+                # that one might be of use - I'm not even sure it does a difference in rendering, but whatever.
+                # Binding to emit value seems fitting to me - we'll provide both.
+                if(mtex.use_map_emit or mtex.use_map_ambient):
                     self.fState.fMiscFlags  |= hsGMatState.hsGMatMiscFlags["kMiscLightMap"]
 
         if stencil:
@@ -1129,21 +1023,24 @@ class plLayer(plLayerInterface):             # Type 0x06
 
     def FromBlenderMat(self,obj,mat):
         # Now Copy Settings from the material...
-        mesh = obj.getData(False,True)
+        mesh = obj.data
 
         # get the blender basic colors and options
-        matR,matG,matB = mat.getRGBCol() #color triplet (map to diffuse)
-        matA = mat.getAlpha()
+        matR,matG,matB = mat.diffuse_color[:] #color triplet (map to diffuse)
+        if mat.use_transparency:
+            matA = mat.alpha
+        else:
+            matA = 1
 
-        specR,specG,specB = mat.getSpecCol() #specular color triplet (map to specular)
-        specR = specR * mat.getSpec()/2
-        specG = specG * mat.getSpec()/2
-        specB = specB * mat.getSpec()/2
+        specR,specG,specB = mat.specular_color[:] #specular color triplet (map to specular)
+        specR = specR * mat.specular_intensity/2
+        specG = specG * mat.specular_intensity/2
+        specB = specB * mat.specular_intensity/2
         specCol=RGBA(specR,specG,specB,matA,type=1)
 
-        mirR,mirG,mirB = mat.getMirCol()
+        mirR,mirG,mirB = mat.mirror_color[:]
 
-        emitfactor = mat.getEmit()
+        emitfactor = mat.emit
         #calculat the emissive colors
         emitR = matR * emitfactor
         emitG = matG * emitfactor
@@ -1156,7 +1053,7 @@ class plLayer(plLayerInterface):             # Type 0x06
 
 
         # calculate the ambient colors
-        ambfactor = mat.getAmb()
+        ambfactor = mat.ambient
         ambR = matR * ambfactor
         ambG = matG * ambfactor
         ambB = matB * ambfactor
@@ -1170,27 +1067,27 @@ class plLayer(plLayerInterface):             # Type 0x06
 
 
 
-        if mat.getMode() & Blender.Material.Modes['NOMIST']:
+        if not mat.use_mist:
             self.fState.fShadeFlags |= hsGMatState.hsGMatShadeFlags["kShadeNoFog"]
             self.fState.fShadeFlags |= hsGMatState.hsGMatShadeFlags["kShadeReallyNoFog"]
 
-        if mat.getMode() & Blender.Material.Modes['ZTRANSP']:
+        if mat.use_transparency:
             self.fState.fZFlags |= hsGMatState.hsGMatZFlags["kZNoZWrite"]
 
-        if mat.getSpec() > 0.0:
+        if not mat.use_shadeless and mat.specular_intensity > 0.0:
             self.fState.fShadeFlags |= hsGMatState.hsGMatShadeFlags["kShadeSpecular"]
             self.fState.fShadeFlags |= hsGMatState.hsGMatShadeFlags["kShadeSpecularAlpha"]
             self.fState.fShadeFlags |= hsGMatState.hsGMatShadeFlags["kShadeSpecularColor"]
             self.fState.fShadeFlags |= hsGMatState.hsGMatShadeFlags["kShadeSpecularHighlight"]
-            self.fSpecularPower = mat.getHardness()
+            self.fSpecularPower = mat.specular_hardness
 
-        if mat.zOffset > 0.0:
+        if mat.offset_z > 0.0:
             self.fState.fZFlags |= hsGMatState.hsGMatZFlags["kZIncLayer"]
 
         # If we have two vertex color layers, the one named Alpha is used as alpha layer - if we have vertex alpha,
         # we need to have the alpha blending flag set, and we need to have
-        for colLayerName in mesh.getColorLayerNames():
-            if(colLayerName.lower() == "alpha"):
+        for colLayerName in mesh.vertex_colors:
+            if(colLayerName.name.lower() == "alpha"):
                 self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendAlpha"]
 
 
@@ -1200,7 +1097,7 @@ class plLayer(plLayerInterface):             # Type 0x06
 
         # Use default settings here...
         mipmapinfo = blMipMapInfo()
-        mipmapinfo.fImageName = image.getName()
+        mipmapinfo.fImageName = image.name
         mipmapinfo.fMipMaps = True
         mipmapinfo.fGauss = False
         mipmapinfo.fResize = True
@@ -1213,22 +1110,19 @@ class plLayer(plLayerInterface):             # Type 0x06
         except:
             pass
 
-        print "  Exporting Mipmap image",image.getName()
-        mipmap=plMipMap.Export(root,image.getName(),image,mipmapinfo,exportTexturesToPrp)
+        print("  Exporting Mipmap image",image.name)
+        mipmap=plMipMap.Export(root,image.name,image,mipmapinfo,exportTexturesToPrp)
 
-        print "  Processes Mipmap image",mipmap.data.Key.name
+        print("  Processes Mipmap image",mipmap.data.Key.name)
 
         self.fTexture = mipmap.data.getRef()
 
         # allow use of alpha
         self.fState.fBlendFlags |= hsGMatState.hsGMatBlendFlags["kBlendAlpha"]
 
-        if obj.type == "Mesh":
-            mesh = obj.getData(False,True)
-            for mface in mesh.faces:
-                if mface.uv and mface.mode & Blender.Mesh.FaceModes["TWOSIDE"]:
-                    self.fState.fMiscFlags  |= hsGMatState.hsGMatMiscFlags["kMiscTwoSided"]
-                    break
+        if obj.type == "MESH":
+            if mesh.show_double_sided:
+                self.fState.fMiscFlags  |= hsGMatState.hsGMatMiscFlags["kMiscTwoSided"]
 
         # set the blendflags for this layer to the alphaflags, if it has alhpa
         if(mipmap.data.FullAlpha | mipmap.data.OnOffAlpha):
@@ -1331,16 +1225,16 @@ class blMipMapInfo:
 
     def export_tex(self,tex):
         # This is only valid for image textures :)
-        if not tex is None and tex.type == Blender.Texture.Types["IMAGE"] and not tex.image == None:
+        if not tex is None and tex.type == "IMAGE" and not tex.image == None:
 
-            self.fImageName = tex.image.getName()
+            self.fImageName = tex.image.name
 
-            if tex.flags & Blender.Texture.Flags["NEGALPHA"]:
+            if tex.invert_alpha:
                 pass
 
-            if tex.imageFlags & Blender.Texture.ImageFlags["INTERPOL"]:
+            if tex.use_interpolation:
                 self.fCompressionType = plBitmap.Compression["kDirectXCompression"]
-                if tex.imageFlags & Blender.Texture.ImageFlags["USEALPHA"]:
+                if tex.use_alpha:
                     self.fBitmapInfo.fDirectXInfo.fCompressionType = plBitmap.CompressionType["kDXT5"]
                 else:
                     # Let it be auto determined....
@@ -1353,24 +1247,25 @@ class blMipMapInfo:
                     self.fBitmapInfo.fUncompressedInfo.fType = plBitmap.Uncompressed["kRGB8888"] # The only format we support
                 self.fResize = False
 
-            if tex.imageFlags & 0x1000: #Blender.Texture.ImageFlags["GAUSS"] doesn't work... :/
+            #if tex.imageFlags & 0x1000: #Blender.Texture.ImageFlags["GAUSS"] doesn't work... :/
+            if False:
                 self.fGauss = True
             else:
                 self.fGauss = False
 
-            self.fAlphaMult = tex.filterSize
+            self.fAlphaMult = tex.filter_size
 
-            if tex.imageFlags & Blender.Texture.ImageFlags["CALCALPHA"]:
+            if tex.use_calculate_alpha:
                 self.fCalcAlpha = True
             else:
                 self.fCalcAlpha = False
 
-            if tex.imageFlags & Blender.Texture.ImageFlags["MIPMAP"]:
+            if tex.use_mipmap:
                 self.fMipMaps = True
             else:
                 self.fMipMaps = False
 
-            if tex.imageFlags & Blender.Texture.ImageFlags["MIPMAP"] or tex.imageFlags & Blender.Texture.ImageFlags["INTERPOL"]:
+            if tex.use_mipmap or tex.use_interpolation:
                 self.fResize = True
             else:
                 self.fResize = False
@@ -1624,7 +1519,7 @@ class plBitmap(hsKeyedObject):               # Type 0x03
         stream=hsStream(CacheFile,"wb")
 
         # Write the version number
-        stream.fs.write(plBitmap.TEXCACHEVER)
+        stream.fs.write(bytes(plBitmap.TEXCACHEVER, 'ascii'))
 
         if mipmapinfo is None:
             self.MipMapInfo.write(stream)
@@ -1639,7 +1534,7 @@ class plBitmap(hsKeyedObject):               # Type 0x03
     def TexCache_LoadVersionInfo(self,stream):
         try:
             versionString = stream.fs.read(4)
-            if versionString == plBitmap.TEXCACHEVER:
+            if versionString == bytes(plBitmap.TEXCACHEVER, 'ascii'):
                 return True
         except:
             pass
@@ -1656,29 +1551,30 @@ class plBitmap(hsKeyedObject):               # Type 0x03
             mipmapinfo = blMipMapInfo()
             mipmapinfo.read(stream)
             return mipmapinfo
-        except:
-            print "    WARNING: Problem reading Texture Cache"
-            print "             PLEASE REMOVE YOUR OLD TEXTURE CACHE FILES"
+        except Exception as ex:
+            print("    WARNING: Problem reading Texture Cache (in infos)")
+            print("             PLEASE REMOVE YOUR OLD TEXTURE CACHE FILES\nInfos:")
+            print(ex)
             return None
 
 
     def TexCache_Load(self):
         # load in the data from the file
         CacheFile = self.TexCache_GetFilename()
-        print "     Reading mipmap %s from cache" % (str(self.Key.name) + ".tex")
+        print("     Reading mipmap %s from cache" % (str(self.Key.name) + ".tex"))
         stream=hsStream(CacheFile,"rb")
         try:
             # load the texture cache version first
             if not self.TexCache_LoadVersionInfo(stream):
-                raise RuntimeError
+                raise RuntimeError("Failed to read version info from texcache.")
             self.MipMapInfo.read(stream)
             # Read the alpha flags
             self.FullAlpha = stream.ReadBool()
             self.OnOffAlpha = stream.ReadBool()
             self.read(stream)
-        except:
-            print "    WARNING: Problem reading Texture Cache"
-            print "             PLEASE REMOVE YOUR OLD TEXTURE CACHE FILES"
+        except Exception as ex:
+            print("    WARNING: Problem reading Texture Cache (in loading)")
+            print("             PLEASE REMOVE YOUR OLD TEXTURE CACHE FILES\nInfos:")
 
         stream.close()
 
@@ -1895,7 +1791,7 @@ class plMipMap(plBitmap):                    # Type 0x04
         if self.Cached_BlenderImage!=None:
             return self.Cached_BlenderImage
 
-        print "     [MipMap %s]"%str(self.Key.name)
+        print("     [MipMap %s]"%str(self.Key.name))
 
         # Build up a temprary file path and name
         resmanager=self.getResManager()
@@ -1921,7 +1817,7 @@ class plMipMap(plBitmap):                    # Type 0x04
         myimg.save(TexFileName)
 
         # and load it again as a blender image
-        BlenderImg=Blender.Image.Load(TexFileName)
+        BlenderImg=bpy.data.images.load(TexFileName)
         BlenderImg.pack()
 
         # cache it for easy fetching
@@ -1930,15 +1826,15 @@ class plMipMap(plBitmap):                    # Type 0x04
         return BlenderImg
 
     def ToBlenderTex(self,name=None):
-        print "     [MipMap %s]"%str(self.Key.name)
+        print("     [MipMap %s]"%str(self.Key.name))
 
         if name == None:
             name = str(self.Key.name)
 
         # Form the Blender cubic env map MTex
-        Tex=Blender.Texture.New(name)
+        Tex=bpy.data.textures.new(name)
         Tex.setImage(self.ToBlenderImage())
-        Tex.type  = Blender.Texture.Types["IMAGE"]
+        Tex.type  = "IMAGE"
         Tex.setImageFlags('UseAlpha')
 
         return Tex
@@ -1947,9 +1843,9 @@ class plMipMap(plBitmap):                    # Type 0x04
         if(self.Processed):
             return
 
-        print "    [MipMap %s]"%str(self.Key.name)
-        print "     MipMapInfo:"
-        print self.MipMapInfo
+        print("    [MipMap %s]"%str(self.Key.name))
+        print("     MipMapInfo:")
+        print(self.MipMapInfo)
 
         if ((prp_Config.texture_cache) and self.TexCache_Exists()): # unless disabled, check for the texture's cache file
             self.TexCache_Load()
@@ -1957,49 +1853,52 @@ class plMipMap(plBitmap):                    # Type 0x04
             # Read in the texture filename from blender (for the name),
             # and convert the texture to an image buffer
 
-            print "     Converting texture %s..." %str(self.Key.name)
-            ImWidth, ImHeight = BlenderImage.getSize()
-            ImageBuffer=cStringIO.StringIO()
+            print("     Converting texture %s..." %str(self.Key.name))
+            ImWidth, ImHeight = BlenderImage.size
+            ImageBuffer=io.BytesIO()
 
             self.FullAlpha = False
             self.OnOffAlpha = False
 
-            if str(BlenderImage.getFilename())[-4:]==".gif":
+            if str(BlenderImage.name)[-4:]==".gif":
                 isGIF=1
-                print "     Image is GIF Image"
+                print("     Image is GIF Image")
             else:
                 isGIF=0
 
+            pix = BlenderImage.pixels[:] # copy the whole array instead of accessing it on the fly. HUUUUUUGE speedup.
             for y in range(ImHeight,0,-1):
                 for x in range(ImWidth):
-                    r,g,b,a = BlenderImage.getPixelF(x,y-1)
+                    r,g,b,a = pix[(x+(y-1)*ImWidth)*4 : (x+(y-1)*ImWidth)*4+4]
                     if self.MipMapInfo.fCalcAlpha:
-                        a = (float(r)+float(g)+float(b))/3.0
+                        a = (r+g+b)/3.0
                     else:
                         if isGIF: # ignora alpha info, and always put it to opaque
                             a=1.0
 
                     #print "Color: %f %f %f - Alpha: %f" % (r,g,b,a)
-                    if a == 0 and not self.FullAlpha:
-                        self.OnOffAlpha = True
-                    if a > 0.0 and a < 1.0:
-                        OnOffAlpha = 0
-                        self.FullAlpha = True
+                    
+                    # TODO - see if that's required
+                    #if a == 0 and not self.FullAlpha:
+                    #    self.OnOffAlpha = True
+                    #if a > 0.0 and a < 1.0:
+                    #    self.OnOffAlpha = False
+                    #    self.FullAlpha = True
 
-                    ImageBuffer.write(struct.pack("BBBB",r*255,g*255,b*255,a*255))
+                    ImageBuffer.write(struct.pack("BBBB",int(r*255),int(g*255),int(b*255),int(a*255)))
 
             # see if we should automatically determine compression type
             if self.MipMapInfo.fCompressionType == plBitmap.Compression["kDirectXCompression"] and \
                 self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType == plBitmap.CompressionType["kError"]:
                 if self.FullAlpha: # Full Alpha requires DXT5
-                    print "     Image uses full alpha channel, compressing DXT5"
+                    print("     Image uses full alpha channel, compressing DXT5")
                     self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType = plBitmap.CompressionType["kDXT5"]
                 elif self.OnOffAlpha: # DXT1 supports On/Off Alpha
                     self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType = plBitmap.CompressionType["kDXT1"]
-                    print "     Image uses on/off alpha , compressing DXT1"
+                    print("     Image uses on/off alpha , compressing DXT1")
                 else: # anything else is ok on the DXT1
                     self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType = plBitmap.CompressionType["kDXT1"]
-                    print "     Image uses no alpha, compressing DXT1"
+                    print("     Image uses no alpha, compressing DXT1")
 
             # Reset the image buffer
             ImageBuffer.seek(0)
@@ -2033,39 +1932,41 @@ class plMipMap(plBitmap):                    # Type 0x04
             new_h=2 ** int(math.log(self.fHeight,2))
 
             if new_w!=self.fWidth or new_h!=self.fHeight:
-                print "      Resizing image from %ix%i to %ix%i" % (self.fWidth,self.fHeight,new_w, new_h)
+                print("      Resizing image from %ix%i to %ix%i" % (self.fWidth,self.fHeight,new_w, new_h))
                 im=Image.new("RGBA",(self.fWidth,self.fHeight))
                 im.fromstring(ImageBuffer.read())
                 im2=im.resize((new_w,new_h),Image.ANTIALIAS)
-                ImageBuffer=cStringIO.StringIO()
+                ImageBuffer=io.BytesIO()
                 ImageBuffer.write(im2.tostring())
                 self.fWidth=new_w
                 self.fHeight=new_h
             else:
-                print "      Image size: %ix%i" % (self.fWidth,self.fHeight)
+                print("      Image size: %ix%i" % (self.fWidth,self.fHeight))
         else:
-            print "      Image size: %ix%i" % (self.fWidth,self.fHeight)
+            print("      Image size: %ix%i" % (self.fWidth,self.fHeight))
 
         # Compress the image to the desired compression,
         # either DXT compression, JPEG Compression or Uncompressed (only RGB8888 colorspace supported)
 
         if (self.MipMapInfo.fCompressionType == plBitmap.Compression["kDirectXCompression"]):
-            print "      DXT Compressing texture .... this can take a few minutes"
+            print("      DXT Compressing texture .... this can take a few minutes")
 
             if(self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType == plBitmap.CompressionType["kDXT1"]):
-                print "     Compressing DXT1"
+                print("     Compressing DXT1")
             elif(self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType == plBitmap.CompressionType["kDXT5"]):
-                print "     Compressing DXT5"
+                print("     Compressing DXT5")
             elif(self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType == plBitmap.CompressionType["kError"]):
-                print "     Compressing kError"
-                raise RuntimeError, "Hmm, wait a second, we can't compress \"kError\", you'd better fix this somewhere :P"
+                print("     Compressing kError")
+                raise RuntimeError("Hmm, wait a second, we can't compress \"kError\", you'd better fix this somewhere :P")
             else:
-                print "     DXT Compression unknown"
-                raise RuntimeError, "Okay, don't know what went wrong here... Probably you're a really smart person to be able to get this exception that should never be given...."
+                print("     DXT Compression unknown")
+                raise RuntimeError("Okay, don't know what went wrong here... Probably you're a really smart person to be able to get this exception that should never be given....")
 
             myimg=tDxtImage(self.fWidth,self.fHeight,self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType)
             myimg.data=ImageBuffer  # input the buffer into the image
+            print("        [compressing, please wait...]")
             myimg.fromRGBA()        # tell it to process
+            print("        [done]")
             self.fImages=[myimg,]
             self.fCompressionType = plBitmap.Compression["kDirectXCompression"]
             self.BitmapInfo.fDirectXInfo.fCompressionType = self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType
@@ -2075,10 +1976,10 @@ class plMipMap(plBitmap):                    # Type 0x04
             elif self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType == plBitmap.CompressionType["kDXT5"]:
                 self.BitmapInfo.fDirectXInfo.fBlockSize = 16
             else:
-                raise ValueError, "Can only support DXT1 and DXT5 Compression"
+                raise ValueError("Can only support DXT1 and DXT5 Compression")
 
         elif (self.MipMapInfo.fCompressionType == plBitmap.Compression["kJPEGCompression"]):
-            print "     JPEG Compressing texture ...."
+            print("     JPEG Compressing texture ....")
 
             myimg=tJpgImage(self.fWidth,self.fHeight)
             myimg.data=ImageBuffer  # input the buffer into the image
@@ -2088,7 +1989,7 @@ class plMipMap(plBitmap):                    # Type 0x04
             self.BitmapInfo.fUncompressedInfo.fType = plBitmap.Uncompressed["kRGB8888"];
 
         elif (self.MipMapInfo.fCompressionType == plBitmap.Compression["kUncompressed"]):
-            print "     Not Compressing texture"
+            print("     Not Compressing texture")
 
             myimg=tImage(self.fWidth,self.fHeight)
             myimg.data=ImageBuffer  # input the buffer into the image
@@ -2104,15 +2005,15 @@ class plMipMap(plBitmap):                    # Type 0x04
         # ofcourse, no mipmapping for jpeg uncompressed textures :)
 
         if self.MipMapInfo.fCompressionType != plBitmap.Compression["kJPEGCompression"] and self.MipMapInfo.fMipMaps:
-            print "     MipMapping...."
+            print("     MipMapping....")
 #            print "     MipMapinfo:\n",self.MipMapInfo
 
-            print "      Level 0 %ix%i" %(self.fWidth,self.fHeight)
+            print("      Level 0 %ix%i" %(self.fWidth,self.fHeight))
             i=1
             mw=self.fWidth>>i
             mh=self.fHeight>>i
             while mw!=0 and mh!=0:
-                print "      Level %i %ix%i" %(i,mw,mh)
+                print("      Level %i %ix%i" %(i,mw,mh))
                 img=copy.copy(myimg)    # copy the previous image
                 img.resize_alphamult(mw,mh,self.MipMapInfo.fAlphaMult,self.MipMapInfo.fGauss)       # apply the new size
 
@@ -2123,7 +2024,7 @@ class plMipMap(plBitmap):                    # Type 0x04
                 mw=self.fWidth>>i
                 mh=self.fHeight>>i
 
-        print "Done"
+        print("Done")
 
     def _FindCreateByMipMapInfo(page,name,mipmapinfo,exportTexturesToPrp):
         resmgr = page.resmanager
@@ -2131,13 +2032,13 @@ class plMipMap(plBitmap):                    # Type 0x04
         if not exportTexturesToPrp:
             page=tex
             if page==None:
-                raise "    Textures PRP file not found"
+                raise RuntimeError("    Textures PRP file not found")
 
         try:
             if not page.age.specialtex.index(name) is -1:
                 page = tex
                 if page==None:
-                    raise "    Textures PRP file not found"
+                    raise RuntimeError("    Textures PRP file not found")
         except ValueError:
             pass
 
@@ -2240,7 +2141,7 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
     def ToBlenderCubicMap(self):
         # retrieve the image from cache if it's there
         if self.Cached_BlenderCubicMap==None:
-            print "     [CubicEnvMap %s]"%str(self.Key.name)
+            print("     [CubicEnvMap %s]"%str(self.Key.name))
 
             # Build up a temprary file path and name
             resmanager=self.getResManager()
@@ -2260,7 +2161,7 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
 
             # Stitch together 6 images
             xpart,ypart, = RawImages[0].getSize()
-            print "      Size of maps: %i x %i" % (xpart,ypart)
+            print("      Size of maps: %i x %i" % (xpart,ypart))
 
             width = xpart*3
             height = ypart*2
@@ -2269,7 +2170,7 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
 
             try:
 
-                ImageBuffer=cStringIO.StringIO()
+                ImageBuffer=io.BytesIO()
                 # Copy bottom three images
                 for y in range(ypart-1,-1,-1):
                     for i in range(0,3):
@@ -2277,11 +2178,11 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
                             try:
                                 r,g,b,a = RawImages[i].getPixelF(x,y)
                                 ImageBuffer.write(struct.pack("BBBB",r*255,g*255,b*255,a*255))
-                            except Exception, detail:
-                                print "      Now in image # %i"% i
-                                print "      Size of image:",RawImages[i].getSize()
-                                print "      Value of X and Y: %i, %i" % (x,y)
-                                raise Exception, detail
+                            except Exception as detail:
+                                print("      Now in image # %i"% i)
+                                print("      Size of image:",RawImages[i].getSize())
+                                print("      Value of X and Y: %i, %i" % (x,y))
+                                raise Exception(detail)
 
                 # Copy top three images
                 for y in range(ypart-1,-1,-1):
@@ -2290,41 +2191,28 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
                             try:
                                 r,g,b,a = RawImages[i].getPixelF(x,y)
                                 ImageBuffer.write(struct.pack("BBBB",r*255,g*255,b*255,a*255))
-                            except Exception, detail:
-                                print "      Now in image # %i"% i
-                                print "      Size of image:",RawImages[i].getSize()
-                                print "      Value of X and Y: %i, %i" % (x,y)
-                                raise Exception, detail
+                            except Exception as detail:
+                                print("      Now in image # %i"% i)
+                                print("      Size of image:",RawImages[i].getSize())
+                                print("      Value of X and Y: %i, %i" % (x,y))
+                                raise Exception(detail)
 
                 # Transfer buffer to image
                 ImageBuffer.seek(0)
 
                 CookedImage.fromstring(ImageBuffer.read())
 
-            except Exception, detail:
-                print "      Exception:",detail
-                print "      Continuing"
+            except Exception as detail:
+                print("      Exception:",detail)
+                print("      Continuing")
 
             # And save the image...
             CookedImage.save(TexFileName)
 
             # Load it back in to process in blender
-            self.Cached_BlenderCubicMap = Blender.Image.Load(TexFileName)
+            self.Cached_BlenderCubicMap = bpy.data.images.load(TexFileName)
 
         return self.Cached_BlenderCubicMap
-
-    def ToBlenderTex(self,name=None):
-
-        if name == None:
-            name = str(self.Key.name)
-
-        # Form the Blender cubic env map MTex
-        Tex=Blender.Texture.New(name)
-        Tex.setImage(self.ToBlenderCubicMap())
-        Tex.type  = Blender.Texture.Types["ENVMAP"]
-        Tex.stype = Blender.Texture.STypes["ENV_LOAD"]
-
-        return Tex
 
     def FromBlenderCubicMap(self,cubicmap):
         # if we are already set up and ready, don't continue....
@@ -2335,7 +2223,7 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
             self.TexCache_Load()
         else:
 
-            print " => Converting CubicEnvironMap %s <=" %str(self.Key.name)
+            print(" => Converting CubicEnvironMap %s <=" %str(self.Key.name))
 
             # first calculate the size of the 6 parts
 
@@ -2381,7 +2269,7 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
                     xstart = 2*xpart
                     xend = width
 
-                ImageBuffer=cStringIO.StringIO()
+                ImageBuffer=io.BytesIO()
                 self.FullAlpha = False
                 self.OnOffAlpha = True
 
@@ -2411,16 +2299,16 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
                 if self.MipMapInfo.fCompressionType == plBitmap.Compression["kDirectXCompression"] and \
                     self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType == plBitmap.CompressionType["kError"]:
                     if self.FullAlpha: # Full Alpha requires DXT5
-                        print "     Image uses full alpha channel, compressing DXT5"
+                        print("     Image uses full alpha channel, compressing DXT5")
                         self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType = plBitmap.CompressionType["kDXT5"]
                     elif self.OnOffAlpha: # DXT1 supports On/Off Alpha
                         self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType = plBitmap.CompressionType["kDXT1"]
-                        print "     Image uses on/off alpha , compressing DXT1"
+                        print("     Image uses on/off alpha , compressing DXT1")
                     else: # anything else is ok on the DXT1
                         self.MipMapInfo.fBitmapInfo.fDirectXInfo.fCompressionType = plBitmap.CompressionType["kDXT1"]
-                        print "     Image uses no alpha, compressing DXT1"
+                        print("     Image uses no alpha, compressing DXT1")
 
-                print " Setting EnvMap side %i" % CubeSide
+                print(" Setting EnvMap side %i" % CubeSide)
                 CubeSide += 1
 
                 # prepare a MipMap object
@@ -2455,7 +2343,7 @@ class plCubicEnvironMap(plBitmap):          # Type 0x05
         if not exportTexturesToPrp:
             page=resmgr.findPrp("Textures")
             if page==None:
-                raise "    Textures PRP file not found"
+                raise RuntimeError("    Textures PRP file not found")
 
         qmap=plCubicEnvironMap.FindCreate(page,name)
         qmap.data.MipMapInfo = mipmapinfo
@@ -2533,12 +2421,12 @@ class plLayerAnimation(plLayerAnimationBase):
                 self.fTimeConvert = prp_AnimClasses.plAnimTimeConvert()
             self.fTimeConvert.read(stream)
         except:
-            print "/---------------------------------------------------------"
-            print "|  WARNING:"
-            print "|   Could not read in portion of plLayerAnimation."
-            print "|   -> Skipping %i bytes ahead " % ( (start + size) - stream.tell())
-            print "|   -> Total object size: %i bytes"% (size)
-            print "\---------------------------------------------------------\n"
+            print("/---------------------------------------------------------")
+            print("|  WARNING:")
+            print("|   Could not read in portion of plLayerAnimation.")
+            print("|   -> Skipping %i bytes ahead " % ( (start + size) - stream.tell()))
+            print("|   -> Total object size: %i bytes"% (size))
+            print("\---------------------------------------------------------\n")
             stream.seek(start + size) #skip to the end
 
     def write(self, stream):
@@ -2546,7 +2434,7 @@ class plLayerAnimation(plLayerAnimationBase):
         self.fTimeConvert.write(stream)
 
     def FromBlender(self,obj,mat,mtex,chan = 0):
-        print "   [LayerAnimation %s]"%(str(self.Key.name))
+        print("   [LayerAnimation %s]"%(str(self.Key.name)))
         # We have to grab the animation stuff here...
         ipo = mat.ipo
         ipo.channel = chan
@@ -2699,10 +2587,10 @@ class plLayerAnimation(plLayerAnimationBase):
         self.fSDLExcludeList.append("Layer")
 
     def ToBlenderMTex(self,mtex,obj):
-        print "     [Layer %s]"%(str(self.Key.name))
+        print("     [Layer %s]"%(str(self.Key.name)))
         # TODO: Implement this to set mtex.colfac, mtex.neg and obj.data.mode
-        print "        WARNING: Layer animation settings have not been"
-        print "        converted into Blender texture settings!"
+        print("        WARNING: Layer animation settings have not been")
+        print("        converted into Blender texture settings!")
 
 
 class plRenderTarget(plBitmap):
@@ -2802,7 +2690,7 @@ class plRenderTarget(plBitmap):
 class plCubicRenderTarget(plRenderTarget):
     def __init__(self,parent=None,name="unnamed",type=0x000E):
         plRenderTarget.__init__(self, parent, name, type)
-        self.fFaces = range(6)
+        self.fFaces = list(range(6))
         self.fFaces[0] = plRenderTarget(parent, "")
         self.fFaces[1] = plRenderTarget(parent, "")
         self.fFaces[2] = plRenderTarget(parent, "")
@@ -2840,7 +2728,7 @@ class plDynamicEnvMap(plCubicRenderTarget):
         self.fYon = 10000
         self.fFogStart = -1
         self.fColor = RGBA(1.0,1.0,1.0,1.0,type=1)
-        self.fRefreshRate = 0.5
+        self.fRefreshRate = 0
         self.fVisRegions = hsTArray([], self.getVersion())
         self.fIncCharacters = 0
 
@@ -2858,8 +2746,8 @@ class plDynamicEnvMap(plCubicRenderTarget):
         self.fHither = FindInDict(objscript,'dynenv.hither',0.3)
         self.fYon = FindInDict(objscript,'dynenv.yon',10000)
         self.fIncCharacters = FindInDict(objscript,'dynenv.inccharacters',0)
-        self.fPos = Vertex(*obj.getLocation("worldspace"))
-        self.fRefreshRate = FindInDict(objscript,'dynenv.refreshrate',0.5)
+        self.fPos = Vertex(*obj.location) # TODO - see about getting worldspace location
+        self.fRefreshRate = FindInDict(objscript,'dynenv.refreshrate',0.)
         # rendertarget props
         self.fWidth = FindInDict(objscript,'dynenv.width',256)
         self.fHeight = FindInDict(objscript,'dynenv.height',256)
@@ -2973,7 +2861,7 @@ class plWaveSet7(plMultiModifier):
         shoreNames = list(FindInDict(objscript, 'visual.waveset.shores', []))
         for shoreName in shoreNames:
             shoreObj = refparser.MixedRef_FindCreate(shoreName)
-            print "WaveSet Shore Ref: " + shoreName
+            print("WaveSet Shore Ref: " + shoreName)
             self.fShores.append(shoreObj.data.getRef())
         # add decal refs
         decalNames = list(FindInDict(objscript, 'visual.waveset.decals', []))
@@ -2985,11 +2873,13 @@ class plWaveSet7(plMultiModifier):
         if(altEnv != None):
             # refparser time
             resmgr = self.getRoot().resmanager
-            refparser = ScriptRefParser(resmgr.findPrp("Textures"), str(self.Key.name), 0x0005, [0x0005,])
-            envmap = refparser.MixedRef_FindCreate(altEnv)
+            refparser = ScriptRefParser(resmgr.findPrp("Textures"), str(self.Key.name), 0x0106, [0x0106])
+            envmap = refparser.MixedRef_FindCreate(altEnv, False)
+            if envmap == None:
+                raise RuntimeError("Cannot find envmap " + altEnv + " for your waveset.")
         else:
             # make a dummy dyanmic envmap for the waveset
-            envmap = plDynamicEnvMap.FindCreate(self.getRoot(),obj.getName())
+            envmap = plDynamicEnvMap.FindCreate(self.getRoot(),obj.name)
             envmap.data.export_obj(obj)
         self.fEnvMap = envmap.data.getRef()
         # now we create a default waveset
@@ -3013,7 +2903,7 @@ class plWaveSet7(plMultiModifier):
         windObj = FindInDict(objscript,'visual.waveset.winddir', None)
         windSpeed = FindInDict(objscript,'visual.waveset.windspeed', 1.0)
         if windObj:
-            windMat = Blender.Object.Get(windObj).getMatrix()
+            windMat = bpy.data.objects[windObj].matrix_basis
             # now we make the wind direction the y axis of the empty, times windspeed
             windX = windMat[1][0] * windSpeed
             windY = windMat[1][1] * windSpeed
@@ -3026,7 +2916,7 @@ class plWaveSet7(plMultiModifier):
         specstart = FindInDict(objscript,'visual.waveset.specstart',250)
         specend = FindInDict(objscript, 'visual.waveset.specend', 1000)
         self.fState.fSpecVec = Vertex(specnoise,specstart,specend)
-        self.fState.fWaterHeight = obj.loc[2]
+        self.fState.fWaterHeight = obj.location[2]
         opac = FindInDict(objscript,'visual.waveset.depthrange.opac.start',0)
         refl = FindInDict(objscript,'visual.waveset.depthrange.refl.start',0)
         wave = FindInDict(objscript,'visual.waveset.depthrange.wave.start',0)
@@ -3048,7 +2938,7 @@ class plWaveSet7(plMultiModifier):
         # should be able to set these colors, the mat color will do for now.
         self.fState.fWaterTint = RGBA(1, 1, 1, 1, type=1)
         self.fState.fSpecularTint = RGBA(1, 1, 1, 0.983333, type=1)
-        self.fState.fEnvCenter = Vertex(obj.loc[0], obj.loc[1], obj.loc[2])
+        self.fState.fEnvCenter = Vertex(obj.location[0], obj.location[1], obj.location[2])
         self.fState.fEnvRefresh = FindInDict(objscript,'visual.waveset.envrefresh',3)
         self.fState.fEnvRadius = FindInDict(objscript,'visual.waveset.envradius',1000)
     def _Find(page,name):

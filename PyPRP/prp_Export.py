@@ -51,14 +51,29 @@ used in URU.
 from PyPRP import prp_Config
 prp_Config.startup()
 
-import Blender, time, sys
+import time, sys
+from bpy import *
 from os.path import *
-from PyPRP.prp_ResManager import *
-from PyPRP.prp_Types import *
-from PyPRP.prp_AlcScript import *
+from prp_ResManager import *
+from prp_Types import *
+from prp_AlcScript import *
 
-def export_age(agename,basepath,selection=0,merge=0,pagename=None,doBuiltIn=False):
-    print "Exporting age %s" %agename
+from threading import Thread
+
+## attempt at speeding up export by processing pages on different cores
+class PrpExportThread(Thread):
+    def __init__(self, page, selection):
+        Thread.__init__(self)
+        self.page = page
+        self.selection = selection
+    
+    def run(self):
+        self.page.export_all(self.selection)
+
+
+
+def export_age(agename,basepath,selection=0,merge=0,pagename=None, doBuiltIn=False):
+    print("Exporting age %s" %agename)
     # load the alcscript
     AlcScript.LoadFromBlender()
     rmgr=alcResManager(basepath,prp_Config.ver0,prp_Config.ver2)
@@ -84,11 +99,19 @@ def export_age(agename,basepath,selection=0,merge=0,pagename=None,doBuiltIn=Fals
     for page in age.pages:
         if page.name=="Textures":
             page.export_all(selection)
+    """processes = []
     for page in age.pages:
-        if (pagename==None or page.name==pagename or (page.name=="BuiltIn" and doBuiltIn)) and page.name!="Textures": ## hack
+        if (pagename==None or page.name==pagename or (page.name=="BuiltIn" and doBuiltIn)) and page.name!="Textures":
+            p = PrpExportThread(page, selection)
+            p.start()
+            processes.append(p)
+    for processus in processes:
+        processus.join() #"""
+    for page in age.pages:
+        if (pagename==None or page.name==pagename or (page.name=="BuiltIn" and doBuiltIn)) and page.name!="Textures":
             page.export_all(selection)
     #save
-    print "" # for formatting of output
+    print("") # for formatting of output
     for page in age.pages:
         if pagename==None or page.name=="Textures" or page.name==pagename or (page.name=="BuiltIn" and doBuiltIn):
             page.save()
@@ -96,44 +119,43 @@ def export_age(agename,basepath,selection=0,merge=0,pagename=None,doBuiltIn=Fals
     for page in age.pages:
         page.unload()
     #generate the funny file
-    print "Writing %s" %(agename + ".fni")
+    print("Writing %s" %(agename + ".fni"))
     initxt=alcFindBlenderText("init")
     fnitxt=""
-    for line in initxt.asLines():
-        fnitxt=fnitxt + line + "\r\n"
+    for line in initxt.lines:
+        fnitxt=fnitxt + line.body + "\r\n"
     fnitxt=fnitxt[:-2]
     if fnitxt!="":
         age.setInit(fnitxt)
     #generate sum files
-    print "Computing Checksums..."
+    print("Computing Checksums...")
     old_style=0
     if prp_Config.ver2==11:
         old_style=1
     age.mfs.update()
-    print "Writing %s" %(agename + ".sum")
+    print("Writing %s" %(agename + ".sum"))
     age.mfs.writesum(basepath + "/" + agename + ".sum",old_style)
 
 
-def open_file(filename):
+def open_file(filename, args):
     try:
         import psyco
         psyco.profile()
     except ImportError:
-        print "Psyco not available to PyPRP..."
+        print("Psyco not available to PyPRP...")
     start=time.clock()
     log=ptLog(sys.stdout,filename + ".log","w")
     std=sys.stdout
     sys.stdout=log
     print("Exporting %s ..." % filename)
-    args = __script__['arg']
     print("Args are %s " % args)
     ext=".raw"
     w = args.split("_")
-    print w
+    print(w)
     ext="." + w[1]
     basepath = dirname(filename)
     if filename.find(ext,-4) == -1:
-        raise RuntimeError,"ERROR: Unsuported file %s, expecting an %s file" %(filename,ext)
+        raise RuntimeError("ERROR: Unsuported file %s, expecting an %s file" %(filename,ext))
     #check if final
     final=0
     try:
@@ -171,7 +193,7 @@ def open_file(filename):
             merge=1
             pass
         else:
-            raise RuntimeError,"Unimplemented option %s" %(args)
+            raise RuntimeError("Unimplemented option %s" %(args))
         export_age(agename,basepath,selection,merge)
     elif w[1]=="prp":
         pagea = basename(filename[:-4])
@@ -207,30 +229,11 @@ def open_file(filename):
             merge=1
             pass
         else:
-            raise RuntimeError,"Unimplemented option %s" %(args)
-        export_age(agename,basepath,selection,merge,pagename,builtin)
+            raise RuntimeError("Unimplemented option %s" %(args))
+        export_age(agename,basepath,selection,merge,pagename, builtin)
     else:
-        raise RuntimeError,"Unimplemented option %s" %(args)
+        raise RuntimeError("Unimplemented option %s" %(args))
     stop=time.clock()
     print("done in %.2f seconds" % (stop-start))
     sys.stdout=std
     log.close()
-
-
-def do_main():
-    try:
-        args = __script__['arg']
-    except:
-        return
-    w = args.split("_")
-    try:
-        descr = "Export " + w[2] +  " ."  + w[1]
-    except IndexError:
-        descr = "Export . " + w[1]
-
-    fname = Blender.sys.makename(ext = "." + w[1])
-    Blender.Window.FileSelector(open_file, descr, fname)
-
-
-#Main code
-do_main()

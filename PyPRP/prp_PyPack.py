@@ -33,7 +33,7 @@ class alcpyfile:
 
     def read(self,buf):
         size, = struct.unpack("<I",buf.read(4))
-        self.data=cStringIO.StringIO()
+        self.data=cBytesIO.BytesIO()
         #print size
         self.data.write(buf.read(size))
 
@@ -62,7 +62,7 @@ class alcpypack:
             buf.seek(off)
             file = alcpyfile()
             file.setName(str(name))
-            print "Reading %s" %str(name)
+            print("Reading %s" %str(name))
             file.read(buf)
             buf.seek(cat)
             self.list.append(file)
@@ -86,7 +86,7 @@ class alcpypack:
             buf.seek(me)
 
 
-##f = file("python.pak.dec","rb")
+##f = open("python.pak.dec","rb")
 ##
 ##pak = alcpypack()
 ##pak.read(f)
@@ -94,7 +94,7 @@ class alcpypack:
 ##
 ##for i in pak.list:
 ##    print "writting %s" %i.name
-##    f = file("out/%s" %i.name,"wb")
+##    f = open("out/%s" %i.name,"wb")
 ##    f.write(struct.pack("I",0x0A0DF23B))
 ##    f.write(struct.pack("I",time.time()))
 ##    i.data.seek(0)
@@ -102,15 +102,15 @@ class alcpypack:
 ##    f.close()
 
 
-####out = file("out.pak","wb")
+####out = open("out.pak","wb")
 ####
 ####pkg = alcpypack()
 ####
 ####for i in glob.glob("newpak/*.pyc"):
 ####    print "packing %s" %i
-####    f = file(i,"rb")
+####    f = open(i,"rb")
 ####    f.read(8)
-####    buf = cStringIO.StringIO()
+####    buf = cBytesIO.BytesIO()
 ####    buf.write(f.read())
 ####    f.close()
 ####    pyf = alcpyfile()

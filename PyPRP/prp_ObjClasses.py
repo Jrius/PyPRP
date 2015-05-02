@@ -17,17 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle, mathutils
 from prp_AbsClasses import *
 from prp_MatClasses import *
 from prp_DrawClasses import *
@@ -85,14 +76,14 @@ class plSceneNode(hsKeyedObject):                           #Type 0x00
        #     o.read(stream)
        #     #print o
        #     if not o.Key.object_type in self.data1allow:
-       #         raise RuntimeError, "Type %04X is not a plSceneObject [0x0000]" % o.Key.object_type
+       #         raise RuntimeError("Type %04X is not a plSceneObject [0x0000]" % o.Key.object_type)
        #     self.data1.append(o)
        # size, = struct.unpack("I",stream.read(4))
        # for i in range(size):
        #     o = UruObjectRef(self.getVersion())
        #     o.read(stream)
        #     if not o.Key.object_type in self.data2allow:
-       #         raise RuntimeError, "Type %04X is not in allow list 2" % o.Key.object_type
+       #         raise RuntimeError("Type %04X is not in allow list 2" % o.Key.object_type)
        #     self.data2.append(o)
        # assert(self.verify())
 
@@ -144,7 +135,7 @@ class plSceneNode(hsKeyedObject):                           #Type 0x00
             o=root.findref(ref)
             o.data.import_all(scene)
 
-        Blender.Redraw()
+        bpy.context.scene.update()
 
 
 class plSceneObject(plSynchedObject):                       #Type 0x01
@@ -217,6 +208,7 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
     def addModifier(self,plobj):
         self.data2.append(plobj.data.getRef())
 
+        
     def checkSynchFlags(self):
         """Last-minute pass over the SDL flags to make sure everything is sane for online environments
            Here's the rub:
@@ -270,14 +262,13 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
         # If we haven't excluded anything at all (above), then exclude everything!
         self.fSynchFlags |= plSynchedObject.Flags["kExcludeAllPersistentState"]
 
-
     def export_object(self, obj, objscript):
         plSynchedObject.export_obj(self, obj, objscript)
         # check for animations
         laipo = None
-        if obj.type == "Lamp":
-            laipo = obj.data.ipo
-        if obj.ipo or laipo:
+        if obj.type == "LAMP":
+            laipo = obj.data.animation_data
+        if obj.animation_data or laipo:
             # this will specify animation names and markers
             animParams = FindInDict(objscript, "animations", [])
             agmm = plAGMasterMod.FindCreate(self.getRoot(), obj.name)
@@ -330,9 +321,9 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
 
         # Create Main Object for this item
         if not self.draw.isNull(): # if it has drawables, it's a mesh
-            print "\n[Visual Object %s]"%(str(self.Key.name))
+            print("\n[Visual Object %s]"%(str(self.Key.name)))
 
-            obj = Blender.Object.New('Mesh',str(self.Key.name))
+            obj = bpy.data.objects.new('Mesh',str(self.Key.name))
             scene.objects.link(obj)
             mesh = Mesh.New(str(self.Key.name))
             obj.link(mesh)
@@ -359,8 +350,8 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
 
 
         elif not self.simulation.isNull(): # if it has simulation, but no drawable, it's a collider mesh
-            print "\n[Phyical Object %s]"%(str(self.Key.name))
-            obj = Blender.Object.New('Mesh',str(self.Key.name))
+            print("\n[Phyical Object %s]"%(str(self.Key.name)))
+            obj = bpy.data.objects.new('Mesh',str(self.Key.name))
             scene.objects.link(obj)
             mesh = Mesh.New(str(self.Key.name))
             obj.link(mesh)
@@ -385,8 +376,8 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
 
 
         elif LightInfo:
-            print "\n[Lamp %s]"%(str(self.Key.name))
-            obj = Blender.Object.New('Lamp',str(self.Key.name))
+            print("\n[Lamp %s]"%(str(self.Key.name)))
+            obj = bpy.data.objects.new('Lamp',str(self.Key.name))
             scene.objects.link(obj)
             obj.layers=[1,]
 
@@ -394,8 +385,8 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
             plCoordinateInterface.Import(self,root,obj)
 
         elif CameraMod:
-            print "\n[Camera %s]"%(str(self.Key.name))
-            obj = Blender.Object.New('Camera',str(self.Key.name))
+            print("\n[Camera %s]"%(str(self.Key.name)))
+            obj = bpy.data.objects.new('Camera',str(self.Key.name))
             scene.objects.link(obj)
             obj.layers=[4,]
 
@@ -403,8 +394,8 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
             plCoordinateInterface.Import(self,root,obj)
 
         else: # if all else fails, it's an Empty
-            print "\n[Empty Object %s]"%(str(self.Key.name))
-            obj = Blender.Object.New('Empty',str(self.Key.name))
+            print("\n[Empty Object %s]"%(str(self.Key.name)))
+            obj = bpy.data.objects.new('Empty',str(self.Key.name))
             scene.link(obj)
             plCoordinateInterface.Import(self,root,obj)
             obj.layers=[2,] # Empty's go to layer
@@ -422,11 +413,11 @@ class plSceneObject(plSynchedObject):                       #Type 0x01
 
     def deldefaultproperty(self,obj,propertyname,defaultvalue):
         try:
-            p=obj.getProperty(propertyname)
-            if(p.getData() == defaultvalue):
-                obj.removeProperty(p)
-        except (AttributeError, RuntimeError):
-            print "Error removing %s property" % propertyname
+            p=obj[propertyname]
+            if(p == defaultvalue):
+                obj[p] = None
+        except (AttributeError, RuntimeError, KeyError):
+            print("Error removing %s property" % propertyname)
 
 class plCoordinateInterface(plObjInterface):
     plCoordinateProperties = \
@@ -482,29 +473,29 @@ class plCoordinateInterface(plObjInterface):
     FindCreate = staticmethod(_FindCreate)
 
     def export_obj(self,obj,objlist=[]):
-        print " [Coordinate Interface %s]"%(str(self.Key.name))
+        print(" [Coordinate Interface %s]"%(str(self.Key.name)))
         m=getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         self.fLocalToWorld.set(m)
         self.fLocalToParent.set(m)
         m.invert()
         self.fWorldToLocal.set(m)
         self.fParentToLocal.set(m)
 
-        parent = obj.getParent()
+        parent = obj.parent
         if not parent is None:
             # only set the parent matrices when it's parent has a coordinate interface as well...
-            if parent.rbFlags & Blender.Object.RBFlags["ACTOR"]:
+            if needsCoordinateInterface(parent):
 
-                parentmtx= obj.getMatrix('localspace') # get parent
-                parentmtx.transpose()
+                parentmtx= obj.matrix_basis
+                #parentmtx.transpose()
                 self.fLocalToParent.set(parentmtx)
 
                 parentmtx.invert()
                 self.fParentToLocal.set(parentmtx)
 
                 alctype = getTextPropertyOrDefault(obj,"type","object")
-                if alctype == "collider" and obj.rbFlags & Blender.Object.RBFlags["DYNAMIC"]:
+                if isKickable(obj):
                     self.BitFlags.SetBit(plCoordinateInterface.plCoordinateProperties["kCanEverDelayTransform"])
                     self.BitFlags.SetBit(plCoordinateInterface.plCoordinateProperties["kDelayedTransformEval"])
                     self.fLocalToParent.identity()
@@ -512,31 +503,31 @@ class plCoordinateInterface(plObjInterface):
 
         ## Need to add code to detect children....
         for obj2 in objlist:
-            parent = obj2.getParent()
+            parent = obj2.parent
             if parent == obj:
-                if obj2.rbFlags & Blender.Object.RBFlags["ACTOR"]:
+                if needsCoordinateInterface(obj2):
                     # it is dynamic, add it, otherwise just ignore it
                     name2 = obj2.name
                     scnobj2 = plSceneObject.FindCreate(self.getRoot(),name2)
                     self.fChildren.append(scnobj2.data.getRef())
 
     def set_matrices(self,localtoworld,localtoparent=None):
-        l2w = Blender.Mathutils.Matrix(localtoworld)
-        w2l = Blender.Mathutils.Matrix(localtoworld)
+        l2w = mathutils.Matrix(localtoworld)
+        w2l = mathutils.Matrix(localtoworld)
         w2l.invert()
 
         if(localtoparent):
-            l2p = Blender.Mathutils.Matrix(localtoparent)
-            p2l = Blender.Mathutils.Matrix(localtoparent)
+            l2p = mathutils.Matrix(localtoparent)
+            p2l = mathutils.Matrix(localtoparent)
             p2l.invert()
         else:
-            l2p = Blender.Mathutils.Matrix(l2w)
-            p2l = Blender.Mathutils.Matrix(w2l)
+            l2p = mathutils.Matrix(l2w)
+            p2l = mathutils.Matrix(w2l)
 
-        l2p.transpose()
-        p2l.transpose()
-        l2w.transpose()
-        w2l.transpose()
+        #l2p.transpose()
+        #p2l.transpose()
+        #l2w.transpose()
+        #w2l.transpose()
 
         self.fLocalToParent.set(l2p)
         self.fParentToLocal.set(p2l)
@@ -544,9 +535,9 @@ class plCoordinateInterface(plObjInterface):
         self.fWorldToLocal.set(w2l)
 
     def import_obj(self,obj):
-        print " [Coordinate Interface %s]"%(str(self.Key.name))
+        print(" [Coordinate Interface %s]"%(str(self.Key.name)))
         l2w = self.fLocalToWorld.get()
-        l2w.transpose()
+        #l2w.transpose()
         obj.setMatrix(l2w)
 
     # Static Method used to separate things from the resmanagers export code
@@ -555,7 +546,6 @@ class plCoordinateInterface(plObjInterface):
             name = obj.name
 
         if isdynamic==1:
-            obj.rbFlags |= Blender.Object.RBFlags["ACTOR"]
             #set the coordinate interface
             coori=page.prp.findref(scnobj.data.coordinate)
             if coori==None:
@@ -631,7 +621,7 @@ class plSimulationInterface(plObjInterface):
     FindCreate = staticmethod(_FindCreate)
 
     def import_obj(self,obj,scnobj):
-        print " [SimulationInterface %s]"%(str(self.Key.name))
+        print(" [SimulationInterface %s]"%(str(self.Key.name)))
         root=self.getRoot()
         phys=root.findref(self.fPhysical)
         phys.data.import_obj(obj,scnobj)
@@ -651,7 +641,7 @@ class plSimulationInterface(plObjInterface):
     def _Export(page,obj,scnobj,name,SceneNodeRef,isdynamic=0):
         # if there are bounds to export...
         alctype = getTextPropertyOrDefault(obj,"type","object")
-        if obj.rbFlags & Object.RBFlags["BOUNDS"] or alctype == "region":
+        if obj.rigid_body or alctype == "region":
             #set the simulation interface
 
             # see if the simulation is already there....
@@ -679,9 +669,8 @@ class plSimulationInterface(plObjInterface):
             physical.data.export_obj(obj,scnobj,isdynamic)                
 
             # Check if this is parented to an object without bounds
-            parent = obj.getParent()
-            if parent != None and (parent.rbFlags &
-            Object.RBFlags["BOUNDS"] == 0) and alctype == "collider" and physical.data.fSubWorld.isNull() and isdynamic:
+            parent = obj.parent
+            if parent != None and (parent.rigid_body == None) and alctype == "collider" and physical.data.fSubWorld.isNull() and isdynamic:
                 parentScnObj = plSceneObject.Find(page,parent.name)
                 parentScnObj.data.simulation=simi.data.getRef()
                 scnobj.data.simulation=UruObjectRef()
@@ -747,7 +736,7 @@ class HKBounds:
         self.SizeTransform_mtx(m)
 
     def SizeTransform_mtx(self,m): #Blender.MathUtils.Matrix input
-        s = m.scalePart()
+        s = m.to_scale()
         # build up basic scale matrix transformation from this
         m = [[s.x, 0.0, 0.0, 0.0], \
              [0.0, s.y, 0.0, 0.0], \
@@ -781,13 +770,14 @@ class SphereBounds(HKBounds):
         pass
 
     def export_obj(self,obj):
-        mesh = obj.getData(False,True)
+        mesh = obj.data
+        rem = 0
         # if the object has modifiers and no vertex groups (as in plDrawInterface.export_obj), apply the modifiers
-        if len(obj.modifiers) > 0 and len(mesh.getVertGroupNames()) == 0:
-            mesh = Mesh.New()
-            mesh.getFromObject(obj)
-        print "  SphereBounds export"
-        print "   Sphere based on %d (%d) vertices"%(len(mesh.verts),len(obj.data.verts))
+        if len(obj.modifiers) > 0 and len(obj.vertex_groups) == 0:
+            mesh = obj.to_mesh(bpy.context.scene, True, "RENDER", True)
+            rem = 1
+        print("  SphereBounds export")
+        print("   Sphere based on %d vertices"%len(mesh.vertices))
         self.vertexs=[]
         self.faces=[]
         #DONE
@@ -795,9 +785,10 @@ class SphereBounds(HKBounds):
         #transform to world for static objects
         matrix=hsMatrix44()
         m=getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         matrix.set(m)
-        for vert in mesh.verts:
+        meshverts = mesh.vertices
+        for vert in meshverts:
             v=[vert.co[0],vert.co[1],vert.co[2]]
             verts.append(v)
         max=0
@@ -807,10 +798,13 @@ class SphereBounds(HKBounds):
                 if d>max:
                     max=d
         self.d=max/2
+        
+        if rem:
+            bpy.data.meshes.remove(mesh)
 
     def export_raw(self,vertices,faces=None):
         max=0
-        print "computing distance..."
+        print("computing distance...")
         for i in vertices:
             for e in vertices:
                 d=distance(i,e)
@@ -849,21 +843,26 @@ class HullBounds(HKBounds):
             stream.WriteFloat(vertex[2])
 
     def export_obj(self,obj):
-        print "  HullBounds export"
-        mesh = obj.getData(False,True)
+        print("  HullBounds export")
+        mesh = obj.data
+        rem = 0
         # if the object has modifiers and no vertex groups (as in plDrawInterface.export_obj), apply the modifiers
-        if len(obj.modifiers) > 0 and len(mesh.getVertGroupNames()) == 0:
-            mesh = Mesh.New()
-            mesh.getFromObject(obj)
-        print "   Exporting %d (%d) vertices"%(len(mesh.verts),len(obj.data.verts))
+        if len(obj.modifiers) > 0 and len(obj.vertex_groups) == 0:
+            mesh = obj.to_mesh(bpy.context.scene, True, "RENDER", True)
+            rem = 1
+        print("   Exporting %d vertices"%len(mesh.vertices))
         self.fVertices=[]
 
-        for vert in mesh.verts:
+        meshverts = mesh.vertices
+        for vert in meshverts:
             v=[vert.co[0],vert.co[1],vert.co[2]]
             self.fVertices.append(v)
+        
+        if rem:
+            bpy.data.meshes.remove(mesh)
 
     def export_raw(self,vertices,faces=None):
-        print "  HullBounds raw export"
+        print("  HullBounds raw export")
         self.fVertices=[]
         for vert in vertices:
             v=[vert[0],vert[1],vert[2]]
@@ -883,7 +882,7 @@ class HullBounds(HKBounds):
     def Transform_obj(self,obj):
         matrix=hsMatrix44()
         m=getMatrix(obj)
-        m.transpose()
+        #m.transpose()
         matrix.set(m)
 
         self.Transform(matrix)
@@ -914,40 +913,46 @@ class ProxyBounds(HullBounds):
                 stream.Write16(v_idx)
 
     def export_obj(self,obj):
-        mesh = obj.getData(False,True)
+        mesh = obj.to_mesh(bpy.context.scene, True, "RENDER", True)
+        # triangulate the newly created mesh
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        bm.free()
+        del bm
         # if the object has modifiers and no vertex groups (as in plDrawInterface.export_obj), apply the modifiers
-        if len(obj.modifiers) > 0 and len(mesh.getVertGroupNames()) == 0:
-            mesh = Mesh.New()
-            mesh.getFromObject(obj)
-        print "  ProxyBounds export"
-        print "   Exporting %d (%d) vertices"%(len(mesh.verts),len(obj.data.verts))
-        print "   Exporting %d (%d) faces"%(len(mesh.faces),len(obj.data.faces))
+        if len(obj.modifiers) > 0 and len(obj.vertex_groups) != 0:
+            raise RuntimeError("Your object has both modifiers and vertex groups, which are incompatible in PyPRP.")
+        print("  ProxyBounds export")
+        print("   Exporting %d vertices"%len(mesh.vertices))
+        print("   Exporting %d faces"%len(mesh.polygons))
 
         self.fVertices=[]
         self.fFaces=[]
-        for vert in mesh.verts:
+        meshvertices = mesh.vertices
+        for vert in meshvertices:
             v=[vert.co[0],vert.co[1],vert.co[2]]
             self.fVertices.append(v)
-        for face in mesh.faces:
-            n=len(face.v)
+        for face in mesh.polygons:
+            n=len(face.vertices)
             if n<3:
+                # wtf ?
                 continue
             elif n==3:
                 tface=[]
                 for i in range(3):
-                    tface.append(face.v[i].index)
-                self.fFaces.append(tface)
-            elif n==4:
-                tface=[]
-                for i in range(3):
-                    tface.append(face.v[i].index)
-                self.fFaces.append(tface)
-                tface=[]
-                for i in (0,2,3):
-                    tface.append(face.v[i].index)
+                    tface.append(face.vertices[i])
                 self.fFaces.append(tface)
             else:
-                raise RuntimeError
+                l1 = face.vertices[0]
+                l2 = face.vertices[1]
+                for i in range(n-2):
+                    l3 = face.vertices[i+2]
+                    self.fFaces.append((l1,l2,l3))
+                    l2 = l3
+                    l1 = l2
+        bpy.data.meshes.remove(mesh)
 
     def export_raw(self,vertices,faces=[]):
         self.fVertices=[]
@@ -989,15 +994,15 @@ class BoxBounds(ProxyBounds):
         ProxyBounds.write(self,stream)
 
     def export_obj(self,obj):
-        print "  BoxBounds export"
+        print("  BoxBounds export")
         # first get worldspace bounding box
-        verts=obj.getBoundBox()
+        verts=obj.bound_box
 
         # get WorldToLocal matrix...
         matrix=hsMatrix44()
         m=getMatrix(obj)
         m.invert()
-        m.transpose()
+        #m.transpose()
         matrix.set(m)
 
         #transform coordinates to local
@@ -1014,7 +1019,7 @@ class BoxBounds(ProxyBounds):
             self.fVertices=c.vertexs
             self.fFaces=c.faces
         except:
-            raise RuntimeException, "Error Generating physical bounding box for object " + str(obj.name) + " please select another bounding method"
+            raise RuntimeException("Error Generating physical bounding box for object " + str(obj.name) + " please select another bounding method")
 
     def export_raw(self,vertices,faces=None):
         boundsmin=None # maximum vertex
@@ -1239,175 +1244,22 @@ class plHKPhysical(plPhysical):
         return page.find(0x003F,name,1)
     FindCreate = staticmethod(_FindCreate)
 
-    def import_obj(self,obj,scnobj):
-        print "  [HKPhysical %s]"%(str(self.Key.name))
-        root= self.getRoot()
-
-        # find the Mesh Object
-        mesh = obj.getData(False,True) # gets a Mesh object instead of an NMesh
-
-        print "   fBounds.fType:",self.fBounds.fType
-        if self.fBounds.fType == plPhysical.Bounds["kBoxBounds"]:
-            # Just use this object as the object to work on
-            sobj = obj
-            sobj.rbFlags |= Blender.Object.RBFlags["BOUNDS"]
-            sobj.rbShapeBoundType = plHKPhysical.HullTypes["BOX"]
-
-        elif self.fBounds.fType == plPhysical.Bounds["kSphereBounds"]:
-            sobj = obj
-            sobj.rbFlags |= Object.RBFlags["BOUNDS"]
-            sobj.rbShapeBoundType = plHKPhysical.HullTypes["SPHERE"]
-
-        elif self.fBounds.fType == plPhysical.Bounds["kHullBounds"]:
-            # use the amount of vertices as a way to see if we must create a new object, or if we can assume
-            # that the objects drawables are similar to the objects physical data
-            if not scnobj.draw.isNull():
-                if len(self.fBounds.fVertices) != len(mesh.verts):
-                   # Directly read it into a hull
-                    hull = alcConvexHull(self.fBounds.fVertices)
-                    sobj=alcCreateMesh('Phys_' + str(self.Key.name),hull.vertexs,hull.faces)
-                    if self.getPageNum() != 0: # but only if it's not page 0
-                        obj.addProperty("page_num",str(self.getPageNum()))
-                    sobj.addProperty("type","collider")
-                    sobj.addProperty("rootobj",obj.name)
-                    sobj.layers=[2,]
-                    sobj.drawType=2
-                    plCoordinateInterface.Import(scnobj,root,sobj) # apply the coordinate interface to the new object
-                else:
-                    # separate physical mesh is ignorable
-                    sobj = obj
-            else:
-                sobj = obj
-                hull = alcConvexHull(self.fBounds.fVertices)
-                mesh.verts.extend(hull.vertexs)
-                mesh.faces.extend(hull.faces)
-                sobj.addProperty("type","collider")
-                sobj.layers=[2,]
-                sobj.drawType=2
-
-            sobj.rbFlags |= Blender.Object.RBFlags["BOUNDS"]
-            sobj.rbShapeBoundType = plHKPhysical.HullTypes["CONVEXHULL"]
-
-        elif self.fBounds.fType == plPhysical.Bounds["kProxyBounds"] or self.fBounds.fType == plPhysical.Bounds["kExplicitBounds"]:
-            # use the amount of vertices as a way to see if we must create a new object, or if we can assume
-            # that the objects drawables are similar to the objects physical data
-            if not scnobj.draw.isNull():
-                if len(self.fBounds.fVertices) != len(mesh.verts):
-                    sobj=alcCreateMesh('Phys_' + str(self.Key.name),self.fBounds.fVertices,self.fBounds.fFaces)
-                    if self.getPageNum() != 0: # but only if it's not page 0
-                        obj.addProperty("page_num",str(self.getPageNum()))
-                    sobj.addProperty("type","collider")
-                    sobj.addProperty("rootobj",obj.name)
-                    sobj.layers=[2,]
-                    sobj.drawType=2
-                    plCoordinateInterface.Import(scnobj,root,sobj) # apply the coordinate interface to the new object
-                else:
-                    # separate physical mesh is ignorable
-                    sobj = obj
-            else:
-                sobj = obj
-                print "   Vertex Count :",len(self.fBounds.fVertices)
-                print "   Face Count   :",len(self.fBounds.fFaces)
-                mesh.verts.extend(self.fBounds.fVertices)
-                mesh.faces.extend(self.fBounds.fFaces)
-                sobj.addProperty("type","collider")
-                sobj.layers=[2,]
-                sobj.drawType=2
-
-            sobj.rbFlags |= Blender.Object.RBFlags["BOUNDS"]
-            sobj.rbShapeBoundType = plHKPhysical.HullTypes["TRIANGLEMESH"]
-
-        if self.fMass > 0.0:
-            sobj.rbFlags |= Blender.Object.RBFlags["ACTOR"]
-            sobj.rbFlags |= Blender.Object.RBFlags["DYNAMIC"]
-            sobj.rbMass = self.fMass
-
-        # Continue now with adding friction and elasticity
-
-        objscript = AlcScript.objects.FindOrCreate(obj.name)
-
-
-        # See if it should be considered a region, and process accordingly...
-
-        # Import Modifiers
-        IsRegion = False
-        IsSurface = False
-
-        for m_ref in scnobj.data2.vector:
-            # plCameraRegionDetector
-            # plSwimRegion
-            # plPanicLinkRegion
-            # plAVLadderMod
-            # plObjectInVolumeDetector
-            if m_ref.Key.object_type in [0x006F,0x012E,0x00FC,0x00B2,0x007B]:
-                mod=root.findref(m_ref)
-                if not mod is None:
-                    mod.data.import_obj(sobj)
-                    IsRegion = True
-
-        for i_ref in scnobj.data1.vector:
-            # plSwimRegionInterface
-            # plSwimCircularCurrentRegion
-            # plSwimStraightCurrentRegion
-            if i_ref.Key.object_type in [0x0133,0x0134,0x0136]:
-                intf=root.findref(i_ref)
-                if not intf is None:
-                    intf.data.import_obj(sobj)
-                    IsSurface = True
-
-        if not (IsRegion or IsSurface or self.gColType == plHKPhysical.Collision["cDetector"]):
-            #sobj.addProperty("coltype",self.gColType) # debug only...
-            if self.gColType == plHKPhysical.Collision["cNone"]:
-
-                if self.fLOSDB & plPhysical.plLOSDB["kLOSDBCameraBlockers"]:
-                    try:
-                        sobj.removeProperty("type")
-                    except:
-                        pass
-                    sobj.addProperty("type","camcollider")
-                else:
-                    # Not a camera colloder, but probably covered by a region we don't get yet..
-                    pass
-            else:
-                if not (self.fLOSDB & plPhysical.plLOSDB["kLOSDBAvatarWalkable"]):
-                    StoreInDict(objscript,"physical.friction",self.fRC)
-
-                if self.fEL > 0.0:
-                    StoreInDict(objscript,"physical.elasticity",self.fEL)
-
-                if self.fProps[plSimulationInterface.plSimulationProperties["kPinned"]]:
-                    StoreInDict(objscript,"physical.pinned","true")
-
-                if not (self.fLOSDB & plPhysical.plLOSDB["kLOSDBCameraBlockers"]):
-                    StoreInDict(objscript,"physical.campassthrough","true")
-
-        else:
-            # If it is a region...
-            sobj.layers=[3,] # regions go to layer 3
-            try:
-                sobj.removeProperty("type")
-            except:
-                pass
-            sobj.addProperty("type","region")
-
-
-
     def export_obj(self,obj,scnobj,isdynamic=0):
-        print " [Physical]"
+        print(" [Physical]")
 
         # determine the hull type
-        if obj.rbFlags & Object.RBFlags["BOUNDS"]:
-            if obj.rbShapeBoundType == plHKPhysical.HullTypes["BOX"]:
+        if obj.rigid_body:
+            if obj.rigid_body.collision_shape == "BOX":
                 self.fBounds = BoxBounds()
-            elif obj.rbShapeBoundType == plHKPhysical.HullTypes["SPHERE"]:
+            elif obj.rigid_body.collision_shape == "SPHERE":
                 self.fBounds = SphereBounds()
-            elif obj.rbShapeBoundType == plHKPhysical.HullTypes["CYLINDER"]:
+            elif obj.rigid_body.collision_shape == "CYLINDER":
                 self.fBounds = HullBounds()
-            elif obj.rbShapeBoundType == plHKPhysical.HullTypes["CONE"]:
+            elif obj.rigid_body.collision_shape == "CONE":
                 self.fBounds = HullBounds()
-            elif obj.rbShapeBoundType == plHKPhysical.HullTypes["TRIANGLEMESH"]:
+            elif obj.rigid_body.collision_shape == "MESH":
                 self.fBounds = ProxyBounds()
-            elif obj.rbShapeBoundType == plHKPhysical.HullTypes["CONVEXHULL"]:
+            elif obj.rigid_body.collision_shape == "CONVEX_HULL":
                 self.fBounds = HullBounds()
             else:
                 self.fBounds = HullBounds()
@@ -1436,7 +1288,7 @@ class plHKPhysical(plPhysical):
             SubWorldObj = refparser.MixedRef_FindCreate(Subref)
             subworld = SubWorldObj.data.getRef()
             self.fSubWorld = subworld
-            print "Adding Subworld Ref [%s] to Physical" % Subref
+            print("Adding Subworld Ref [%s] to Physical" % Subref)
 
         ## First determine if we should encode this as a region
         ## This should happen here, rather than in the resource manager, to avoid
@@ -1448,7 +1300,7 @@ class plHKPhysical(plPhysical):
         prptype = getTextPropertyOrDefault(obj,"type",prptype)
 
         if prptype == "region":
-            print "  Setting Region-Specific settings...."
+            print("  Setting Region-Specific settings....")
 
 
             regiontype = FindInDict(objscript,'region.type',"logic")
@@ -1516,46 +1368,27 @@ class plHKPhysical(plPhysical):
             # if not a region
 
             # retrieve mass from Blender rigid body settings if available
-            if obj.rbFlags & Blender.Object.RBFlags["ACTOR"]:
-                if obj.rbFlags & Blender.Object.RBFlags["DYNAMIC"]:
-                    self.fMass = obj.rbMass
+            if needsCoordinateInterface(obj):
+                if isKickable(obj):
+                    self.fMass = obj.rigid_body.mass
                 else:
                     self.fMass = 1.0
             else:
                 self.fMass = 0.0
 
             if self.fMass <= 0.0:
-                print "  No Mass"
+                print("  No Mass")
             else:
-                print "  Mass",obj.rbMass
+                print("  Mass",obj.rigid_body.mass)
 
             # retrieve friction from logic property
-            self.fRC = float(FindInDict(objscript,"physical.friction",-1.0))
-            if self.fRC == -1.0:
-                # retrieve from alcscript if not set as logic property
-                self.fRC = getFloatPropertyOrDefault(obj,"rc",-1.0)
+            self.fRC = obj.rigid_body.friction
 
-            if self.fRC < 0.0:
-                print "  No Friction, disabling frictive setting"
-                # If no friction is set, or it is set lower than 0,
-                # default it to around 10, so it doesn't appear unnatural on the moving objects...
-                self.fRC = 0.5
-                # And disable friction :)
+            if not isKickable(obj): # is collider, then we must make sure the avatar doesn't slide on the object's surface.
                 self.fLOSDB |= plPhysical.plLOSDB["kLOSDBAvatarWalkable"]
-            else:
-                print "  Friction:",self.fRC
 
             # retrieve elasticity from alcscript
-            self.fEL = float(FindInDict(objscript,"physical.elasticity",-1.0))
-            if self.fEL == -1.0:
-                # retrieve elasticity from logic property if not in alcscript
-                self.fEL = getFloatPropertyOrDefault(obj,"el",-1.0)
-            if self.fEL < 0.0:
-                print "  No Elasticity set"
-                # reset to 0.0
-                self.fEL = 0.0
-            else:
-                print "  Elasticity:",self.fEL
+            self.fEL = obj.rigid_body.restitution
 
             self.gFlagsDetect = plHKPhysical.FlagsDetect["cDetectNone"]
             self.gFlagsRespond = plHKPhysical.FlagsRespond["cRespInitial"]
@@ -1567,7 +1400,7 @@ class plHKPhysical(plPhysical):
                 # Default decoding neccesary
                 # if the object has logicmodifiers script, consider it a detector
                 if FindInDict(objscript,"logic.modifiers",None) != None:
-                    print "  Autotetecting object to logical receiver - setting settings accordingly"
+                    print("  Autotetecting object to logical receiver - setting settings accordingly")
 
                     self.gFlagsRespond = plHKPhysical.FlagsRespond["cRespClickable"]
                     self.gColType = plHKPhysical.Collision["cDetector"]
@@ -1576,7 +1409,7 @@ class plHKPhysical(plPhysical):
 
                 else:
                     # basic setting: if it is an explicit dynamic object and has mass, it's position get's stored
-                    if isdynamic and obj.rbFlags & Blender.Object.RBFlags["DYNAMIC"]:
+                    if isKickable(obj):
                         self.gColType = plHKPhysical.Collision["cStorePosition"]
                     else:
                         self.gColType = plHKPhysical.Collision["cResetPosition"]
@@ -1602,31 +1435,31 @@ class plHKPhysical(plPhysical):
             if clickHack:
                 self.fLOSDB = plHKPhysical.plLOSDB["kLOSDBUIItems"]
 
-            if (str(FindInDict(objscript,"physical.pinned","false")).lower() == "true" or (obj.rbFlags & Blender.Object.RBFlags["DYNAMIC"] == 0 and obj.rbFlags & Blender.Object.RBFlags["ACTOR"])):
-                print "  Pinning object"
+            if (str(FindInDict(objscript,"physical.pinned","false")).lower() == "true" or (not isKickable(obj) and needsCoordinateInterface(obj))):
+                print("  Pinning object")
                 self.fProps[plSimulationInterface.plSimulationProperties["kPinned"]] = 1
 
             # and make objects Camera Blockers By default - or let them through if physical.camerapassthrough is set to true
             if str(FindInDict(objscript,"physical.campassthrough","false")).lower() != "true":
-                print "  Camera blocking enabled"
+                print("  Camera blocking enabled")
                 self.fLOSDB |= plPhysical.plLOSDB["kLOSDBCameraBlockers"]
             else:
-                print "  Camera blocking disabled"
+                print("  Camera blocking disabled")
 
         #set position and other attribs
         if (self.fMass == 0.0 and  isdynamic == 0):
-            print "  Object is Static"
+            print("  Object is Static")
             #transform to world for static objects
             self.fBounds.Transform_obj(obj) # do this with transformation data from object
         else:
-            print "  Object is Dynamic"
+            print("  Object is Dynamic")
             # set position
-            x,y,z = obj.getLocation()
+            x,y,z = obj.location
             self.Position=Vertex(x,y,z)
 
             # set orientation
             m = getMatrix(obj)
-            quat = m.toQuat()
+            quat = m.to_quaternion()
             quat.normalize()
             self.fOrientation = hsQuat()
             self.fOrientation.setQuat(quat)
@@ -1675,11 +1508,11 @@ class plHKPhysical(plPhysical):
             self.fBounds.Transform_obj(obj) # do this with transformation data from object
         else:
             # set position
-            x,y,z = L2Wmatrix.translationPart()
+            x,y,z = L2Wmatrix.translation
             self.Position=Vertex(x,y,z)
 
             # set orientation
-            quat = L2Wmatrix.toQuat()
+            quat = L2Wmatrix.to_quaternion()
             quat.normalize()
             self.fOrientation = hsQuat()
             self.fOrientation.setQuat(quat)
@@ -1712,7 +1545,7 @@ class plHKSubWorld(plSynchedObject):
         HKSubWorld = plHKSubWorld.FindCreate(page, name)
         HKSubWorld.data.export_obj(obj, scnobj)
         # attach to sceneobject
-        print "Appending subworld [%s] to sceneobject [%s]" % (HKSubWorld.data.Key.name, scnobj.data.Key.name)
+        print("Appending subworld [%s] to sceneobject [%s]" % (HKSubWorld.data.Key.name, scnobj.data.Key.name))
         scnobj.data.data1.append(HKSubWorld.data.getRef())
     Export = staticmethod(_Export)
         
@@ -1751,7 +1584,7 @@ class plOccluder(plObjInterface):
         Occluder.data.fSceneNode = sceneNode
         Occluder.data.parentref = scnobj.data.getRef()
         # attach to sceneobject
-        print "Appending occluder [%s] to sceneobject [%s]" % (Occluder.data.Key.name, scnobj.data.Key.name)
+        print("Appending occluder [%s] to sceneobject [%s]" % (Occluder.data.Key.name, scnobj.data.Key.name))
         scnobj.data.data1.append(Occluder.data.getRef())
     Export = staticmethod(_Export)
     
@@ -1784,16 +1617,20 @@ class plOccluder(plObjInterface):
             
     def export_obj(self, obj, scnobj):
         tmatrix = getMatrix(obj)
-        tmatrix.transpose()
-        for face in obj.data.faces:
-            if (len(face.v) > 0):
+        #tmatrix.transpose()
+        meshvertices = obj.data.vertices
+        for face in obj.data.polygons:
+            if (len(face.vertices) > 0):
                 # reversed uru space
-                Nor = tmatrix.rotationPart().invert().transpose() * Blender.Mathutils.Vector(face.no) * -1
+                #Nor = tmatrix.rotationPart().invert().transpose() * mathutils.Vector(face.no) * -1
+                rotationPart = tmatrix.copy()
+                rotationPart.translation = Vector((0,0,0))
+                Nor = rotationPart.inverted() * mathutils.Vector(face.normal) * -1
                 Nor.normalize()
                 # transform verts into world space (transposed for uru's reversed space)
                 Verts = []
-                for v in face.v:
-                    vertVec = tmatrix * Blender.Mathutils.Vector(v.co.x, v.co.y, v.co.z)
+                for v in face.vertices:
+                    vertVec = tmatrix * mathutils.Vector(meshvertices[v].co.x, meshvertices[v].co.y, meshvertices[v].co.z)
                     Verts.append(vertVec)
                     # this is mightiliy annoying, why can't these use subscripting? :P
                     if(self.fWorldBounds.min.x > vertVec.x):

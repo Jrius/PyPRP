@@ -46,14 +46,14 @@ This script attempts to upgrade outdated styles from the PRP format
 used in URU.
 """
 
-from PyPRP import prp_Config
+import prp_Config
 prp_Config.startup()
 
-import Blender, time, sys, os
+import time, sys, os
+from bpy import *
 from os.path import *
 
-import PyPRP
-from PyPRP.prp_Wizards import Wizard_BookUpgrade
+from prp_Wizards import Wizard_BookUpgrade
 
 def upgrade_book():
     REMOVE_OLD = Blender.Draw.Create(1)
@@ -65,7 +65,7 @@ def upgrade_book():
         return
     RemoveOld = (REMOVE_OLD.val == 1)
 
-    print "Upgrading Book Settings"
+    print("Upgrading Book Settings")
     Wizard_BookUpgrade(RemoveOld)
     if RemoveOld:
         message = "Upgraded books and deleted the old objects."
@@ -77,7 +77,7 @@ def setbounds():
     objects = Blender.Scene.GetCurrent().objects.selected
     for sobject in objects:
         sobject.rbFlags |= Blender.Object.RBFlags.BOUNDS
-        print Blender.Object.RBShapes
+        print(Blender.Object.RBShapes)
         sobject.rbShapeBoundType = Blender.Object.RBShapes["POLYHEDERON"]
 
 def do_main():
@@ -90,7 +90,7 @@ def do_main():
         # call function defined in prp_Wizards
         getattr(PyPRP.prp_Wizards, w[1])()
     else:
-        raise "Unknown options %s" %(w)
+        raise RuntimeError("Unknown options %s" %(w))
 
 
 #Main code

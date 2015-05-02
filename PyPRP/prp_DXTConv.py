@@ -17,8 +17,8 @@
 #
 #    Please see the file LICENSE for the full license.
 
-import struct,StringIO,cStringIO,time
-import Image,ImageFilter
+import struct,io,io,time
+import PIL.Image as Image,PIL.ImageFilter as ImageFilter
 from prp_HexDump import *
 
 class tColor:
@@ -33,7 +33,7 @@ class tImage:
         self.w=w
         self.h=h
         self.data=None #RGBA image
-        self.rawdata=cStringIO.StringIO() #compressed raw image
+        self.rawdata=io.BytesIO() #compressed raw image
         self.alpha=tColor(255,0,255)
         self.hasalpha=0
 
@@ -65,7 +65,7 @@ class tImage:
             im3 = im2.filter(ImageFilter.SMOOTH)
         else:
             im3 = im2
-        self.data=cStringIO.StringIO()
+        self.data=io.BytesIO()
         self.data.write(im3.tostring())
         #print self.data.tell(),w,h
         self.w=w
@@ -83,7 +83,7 @@ class tImage:
         else:
             im3 = im2
 
-        self.data=cStringIO.StringIO()
+        self.data=io.BytesIO()
         self.data.write(im3.tostring())
         self.w=w
         self.h=h
@@ -98,7 +98,7 @@ class tImage:
         if float(value) < 0.0:
             value = 0.0
 
-        aux=cStringIO.StringIO()
+        aux=io.BytesIO()
         self.data.seek(0)
         w = self.data.read(4)
         while w!="":                #RGBA
@@ -130,7 +130,7 @@ class tImage:
     def applyAlpha(self,bitbased=0):
         if not self.hasalpha:
             return
-        aux=cStringIO.StringIO()
+        aux=io.BytesIO()
         self.data.seek(0)
         w = self.data.read(4)
         while w!="":                #RGBA
@@ -155,7 +155,7 @@ class tImage:
 
 
     def convert(self):
-        self.data=cStringIO.StringIO()
+        self.data=io.BytesIO()
         self.rawdata.seek(0)
         w = self.rawdata.read(4)
         while w!="":                #BGRA
@@ -168,10 +168,16 @@ class tImage:
 
 
     def iconvert(self):
-        self.rawdata=cStringIO.StringIO()
+        self.rawdata=io.BytesIO()
         self.data.seek(0)
+        #w = self.data.read(4)
+        #while w!="":                #RGBA
+        #    b,g,r,a = struct.unpack("BBBB",w)
+        #                                   #BGRA
+        #    self.rawdata.write(struct.pack("BBBB",r,g,b,a))
+        #    w = self.data.read(4)
         w = self.data.read(4)
-        while w!="":                #RGBA
+        while w!=b"":                #RGBA
             b,g,r,a = struct.unpack("BBBB",w)
                                            #BGRA
             self.rawdata.write(struct.pack("BBBB",r,g,b,a))
@@ -209,7 +215,7 @@ class tDxtImage(tImage):
             self.rawdata.write(buf.read((self.w*self.h)*4))
             return
         if (self.w % 4) or (self.h % 4):
-            raise RuntimeError, "Invalid DXT size %ix%i"%(self.w,self.h)
+            raise RuntimeError("Invalid DXT size %ix%i"%(self.w,self.h))
         #size=((self.w*self.h)*self.texel)/16
         texels=(self.w*self.h)/self.texel
         size=(self.w*self.h)
@@ -224,7 +230,7 @@ class tDxtImage(tImage):
             return
         self.rawdata.seek(0)
         y=0
-        self.data=cStringIO.StringIO()
+        self.data=io.BytesIO()
         #self.data.truncate(self.h * self.w * 4)
         #print "chicki",self.data.tell()
         for i in range((self.h * self.w)/4):
@@ -253,9 +259,9 @@ class tDxtImage(tImage):
             self.iconvert()
             return
         if (self.w % 4) or (self.h % 4):
-            raise RuntimeError, "Invalid DXT size %ix%i"%(self.w,self.h)
+            raise RuntimeError("Invalid DXT size %ix%i"%(self.w,self.h))
         self.data.seek(0)
-        self.rawdata=cStringIO.StringIO()
+        self.rawdata=io.BytesIO()
         horn = (self.w)*4
         hell = (self.w-4) * 4
         y=0
@@ -452,12 +458,12 @@ class tDxtImage(tImage):
             gt.append(g0)
             bt.append(b1)
             bt.append(b0)
-        c0 = 0L
-        c1 = 0L
+        c0 = 0
+        c1 = 0
         c0 |= aa
         c1 |= bb
         #assert(c0>c1)
-        u64 = 0L
+        u64 = 0
         u64 |= c0
         #print "%X" %u64
         #u64 = u64 << 16
@@ -480,13 +486,13 @@ class tDxtImage(tImage):
         for i in range(16):
             mini=255 ** 2 + 255 ** 2 + 255 ** 2
             if maxi==1 and a[i]<128:
-                result=3L
+                result=3
             else:
                 for e in range(maxi+1,-1,-1):
                     #print r[i],rt[e],g[i],gt[e],b[i]
                     d=self.distance(r[i],rt[e],g[i],gt[e],b[i],bt[e])
                     if d<=mini:
-                        result=0L
+                        result=0
                         result |=e
                         mini=d
             u64 |= result << ((2*i)+32)
@@ -513,15 +519,15 @@ class tDxtImage(tImage):
                 max=4
             elif a>amax:
                 amax=a
-        a0=0L
-        a1=0L
+        a0=0
+        a1=0
         if max==6:
             a0 |=amax
             a1 |=amin
         else:
             a0 |=amin
             a1 |=amax
-        u64 = 0L
+        u64 = 0
         u64 |= a0
         #u64 = u64<<8
         u64 |= a1<<8
@@ -544,7 +550,7 @@ class tDxtImage(tImage):
             for e in range(7,-1,-1):
                 if abs(a-t[e])<=dis:
                     dis=abs(a-t[e])
-                    w=0L
+                    w=0
                     w|=e
             x=x+1
             u64 |= w << ((3*(x-1))+16)
@@ -568,10 +574,10 @@ class tJpgImage(tImage):
 
     def read(self,buf):
         self.type, = struct.unpack("B",buf.read(1))
-        self.rawdata=cStringIO.StringIO()
+        self.rawdata=io.BytesIO()
         self.rawdata.write(struct.pack("B",self.type))
         if self.type not in [0x00,0x01,0x02,0x03]:
-            raise "type is %02X" %(self.type)
+            raise RuntimeError("type is %02X" %(self.type))
         #The image
         if self.type & 0x01: #RLE 1
             count=1
@@ -596,8 +602,8 @@ class tJpgImage(tImage):
 
     def toRGBA(self):
         self.rawdata.seek(0)
-        self.data=cStringIO.StringIO()
-        aux=cStringIO.StringIO()
+        self.data=io.BytesIO()
+        aux=io.BytesIO()
         self.type, = struct.unpack("B",self.rawdata.read(1))
         #Note: It does not make much sense to store images with flags 0x03,
         #that one of the reasons of the little amount of found examples.
@@ -613,7 +619,7 @@ class tJpgImage(tImage):
             assert(tcount==self.w * self.h)
         else: #JPG
             self.jpg1size, = struct.unpack("<I",self.rawdata.read(4))
-            jpg1=cStringIO.StringIO()
+            jpg1=io.BytesIO()
             jpg1.write(self.rawdata.read(self.jpg1size))
             jpg1.seek(0)
             me=Image.open(jpg1)
@@ -641,12 +647,12 @@ class tJpgImage(tImage):
             assert(tcount==self.w * self.h)
         else: #JPG
             self.jpg2size, = struct.unpack("<I",self.rawdata.read(4))
-            jpg2=cStringIO.StringIO()
+            jpg2=io.BytesIO()
             jpg2.write(self.rawdata.read(self.jpg2size))
             jpg2.seek(0)
             me=Image.open(jpg2)
             #me.show()
-            alpha=cStringIO.StringIO()
+            alpha=io.BytesIO()
             alpha.write(me.tostring())
             alpha.seek(0)
             del jpg2
@@ -660,11 +666,11 @@ class tJpgImage(tImage):
 
 
     def fromRGBA(self):
-        self.rawdata=cStringIO.StringIO()
+        self.rawdata=io.BytesIO()
         self.data.seek(0)
         self.rawdata.write(struct.pack("B",self.type))
         if self.type not in [0x00,0x01,0x02,0x03]:
-            raise "Unsupported type"
+            raise RuntimeError("Unsupported type")
         #the image
         if self.type & 0x01: #RLE 1
             count=0
@@ -693,7 +699,7 @@ class tJpgImage(tImage):
                 self.rawdata.write(struct.pack("BBBB",bi,gi,ri,0))
             self.rawdata.write(struct.pack("<II",0,0))
         else: #jpg 1
-            jpg1=cStringIO.StringIO()
+            jpg1=io.BytesIO()
             me = Image.new("RGBA",(self.w,self.h))
             me.fromstring(self.data.read(self.w * self.h * 4))
             me.save(jpg1,"JPEG")
@@ -727,12 +733,12 @@ class tJpgImage(tImage):
                 self.rawdata.write(struct.pack("BBBB",0,0,ai,0))
             self.rawdata.write(struct.pack("<II",0,0))
         else: #jpg 2
-            aux=cStringIO.StringIO()
+            aux=io.BytesIO()
             for i in range(self.w * self.h):
                 r,g,b,a = struct.unpack("BBBB",self.data.read(4))
                 aux.write(struct.pack("BBBB",a,0,0,255))
             aux.seek(0)
-            jpg1=cStringIO.StringIO()
+            jpg1=io.BytesIO()
             me = Image.new("RGBA",(self.w,self.h))
             me.fromstring(aux.read(self.w * self.h * 4))
             me.save(jpg1,"JPEG")

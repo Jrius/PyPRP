@@ -16,18 +16,8 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 #    Please see the file LICENSE for the full license.
-
-try:
-    import Blender
-    try:
-        from Blender import Mesh
-        from Blender import Lamp
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
-import md5, random, binascii, cStringIO, copy, Image, math, struct, StringIO, os, os.path, pickle
+from bpy import *
+import hashlib, random, binascii, io, copy, PIL.Image, math, struct, io, os, os.path, pickle
 from prp_Types import *
 from prp_HexDump import *
 from prp_GeomClasses import *
@@ -365,10 +355,10 @@ class plSwimCircularCurrentRegion(plSwimRegionInterface):
             # find or create the dummy
             dummyobj = root.find(0x0001,dummyname,0)
             if dummyobj == None:
-                raise RuntimeError, "Could not locate a swim center object named %s" % dummyname
+                raise RuntimeError("Could not locate a swim center object named %s" % dummyname)
             self.fCurrentSO = dummyobj.data.getRef()
         else:
-            raise RuntimeError, "Could not locate a swim center object named %s" % dummyname
+            raise RuntimeError("Could not locate a swim center object named %s" % dummyname)
 
 
 #list1
@@ -441,7 +431,7 @@ class plSwimStraightCurrentRegion(plSwimRegionInterface):
             # find or create the dummy
             dummyobj = root.find(0x0001,dummyname,0)
             if dummyobj == None:
-                raise RuntimeError, "Could not locate a swim center object named %s" % dummyname
+                raise RuntimeError("Could not locate a swim center object named %s" % dummyname)
             self.fCurrentSO = dummyobj.data.getRef()
         else:
-            raise RuntimeError, "Could not locate a swim center object named %s" % dummyname
+            raise RuntimeError("Could not locate a swim center object named %s" % dummyname)

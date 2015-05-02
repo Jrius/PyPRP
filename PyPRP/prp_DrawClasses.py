@@ -17,18 +17,20 @@
 #
 #    Please see the file LICENSE for the full license.
 
-try:
-    import Blender
-    try:
-        from Blender import Mesh, Mathutils
-    except Exception, detail:
-        print detail
-except ImportError:
-    pass
-
+from bpy import *
 import array, random, binascii
 from prp_AbsClasses import *
 import prp_Config
+from prp_Types import *
+from prp_GeomClasses import *
+from prp_ConvexHull import *
+from prp_Functions import *
+from prp_Classes import *
+from prp_MatClasses import *
+from prp_LightClasses import *
+
+import bmesh
+
 
 class VertexCoderElement:
     def __init__(self,base=0,count=0):
@@ -42,7 +44,7 @@ class VertexCoderElement:
         if (self.count != 0):
             self.count = self.count - 1
             return (self.base + granularity * buf.Read16())
-        raise RuntimeError, "VertexCoderElement prematurely reached end of count"
+        raise RuntimeError("VertexCoderElement prematurely reached end of count")
 
 class VertexCoderColorElement:
     def __init__(self,base=0,count=0):
@@ -67,7 +69,7 @@ class VertexCoderColorElement:
             else:
                 return buf.ReadByte()
         else:
-           raise RuntimeError, "VertexCoderColorElement prematurely reached end of count."
+           raise RuntimeError("VertexCoderColorElement prematurely reached end of count.")
 
 
 class plVertexCoder:
@@ -221,7 +223,7 @@ class plVertexCoder:
             try:
                 buf.write(struct.pack("<hhh",nx,ny,nz))
             except:
-                raise "wtf %i %i %i, %i %i %i" %(vert.nx,vert.ny,vert.nz,nx,ny,nz)
+                raise RuntimeError("wtf %i %i %i, %i %i %i" %(vert.nx,vert.ny,vert.nz,nx,ny,nz))
             #colors
             #vcolor=vert.color.uget()
             vcolor=[vert.color.b,vert.color.g,vert.color.r,vert.color.a]
@@ -454,7 +456,7 @@ class plGBufferGroup:
 
                 # set "elif 1:" to "elif 0:" to test the code below should it become
                 # neccessary
-                raise RuntimeError, "Encountered non-compressed vertex data - not supported"
+                raise RuntimeError("Encountered non-compressed vertex data - not supported")
             else:
                 # This should work in theory....
                 vtxSize = buf.Read32()
@@ -517,9 +519,9 @@ class plGBufferGroup:
 
             if False: # Enable if neccesary
                 if(count > 100000): # only say this if we have a really big number of vertices
-                    print "=> Storing %i vertices of geometry - this can take some time...." % count
+                    print("=> Storing %i vertices of geometry - this can take some time...." % count)
                 else:
-                    print "=> Storing %i vertices of geometry..." % count
+                    print("=> Storing %i vertices of geometry..." % count)
             coder.write(self,buf,count)
         buf.Write32(len(self.fIdxBuffStorage))
         for i in range(len(self.fIdxBuffStorage)):
@@ -591,7 +593,7 @@ class plSpaceTreeNode:
         self.box.read(buf)
         self.flags = buf.Read16()
         if self.flags not in [0x00,0x01,0x04,0x05,0x08]:
-            raise "plSpaceTreeNode has unknown flag " + self.flags
+            raise RuntimeError("plSpaceTreeNode has unknown flag ")
         self.parent = buf.ReadSigned16()
         self.left = buf.Read16()
         self.right = buf.Read16()
@@ -651,11 +653,11 @@ class plSpaceTree:
                 assert(i>=numIcicles)
             if node.flags & 0x08:       #female,male,live_male,live_female
                 if node.parent not in [0x0A52,0x290A,0x0000]:
-                    raise "tree parent is %04X" % node.parent
+                    raise RuntimeError("tree parent is %04X" % node.parent)
                 if node.left not in [0xE120,0x000A,0x0000]:
-                    raise "tree left is %04X" % node.left
+                    raise RuntimeError("tree left is %04X")
                 if node.right not in [0x070F,0x676E,0x0000,0x3F80]:
-                    raise "tree right is %04X" % node.right
+                    raise RuntimeError("tree right is %04X")
             self.nodes.append(node)
 
 
@@ -933,259 +935,10 @@ class plDrawableSpans(plDrawable):
             self.import_object(i,"obj%02i" % i)
 
 
-    def import_mesh(self,obj,groupidx,drawidx=0):
-        root = self.getRoot()
-        name = str(obj.name)
-        # Do Mesh import here
-        print "  [Drawable Spans]"
-        if groupidx==-1 or groupidx == 0xFFFFFFFF: # Check both signed and unsigned representations (unfortunate hack)
-            return []
-        if self.fDIIndices[groupidx].fFlags==plDISpanIndex.Flags["kBone"]:
-            return []
-
-        resmanager=self.getResManager()
-
-        # Find span index
-        spanIndex = self.fDIIndices[groupidx] # plDISpanIndex
-
-        # find the Mesh Object
-        mesh = obj.getData(False,True) # gets a Mesh object instead of an NMesh
-
-        # The icicle has a list of vertex groups
-
-        # As this list has been generated by us before, it is safe to assum that it is all already connected
-        MatList = []
-        print "   Mesh's material list:",obj.getMaterials()
-        for bmat in obj.getMaterials():
-            MatList.append(bmat)
-        print "   There are %d materials already on the object"%(len(MatList))
-
-        MatIndices = {}
-
-        # Parse the materials used by this DIIndexSet
-        for i in range(len(spanIndex.fIndices)):
-            icicle = self.fIcicles[spanIndex.fIndices[i]]
-
-            #Find the material
-            matref=self.fMaterials[icicle.fMaterialIdx]
-            mat=root.findref(matref)
-            if mat==None:
-                print "   Material %s not found" %str(matref)
-                BlenderMat = Blender.Material.New("MatUnknown")
-            else:
-                BlenderMat=mat.data.ToBlenderMat(obj)
-
-            midx = -1
-            for i in range(len(MatList)):
-                bmat = MatList[i]
-                if bmat == BlenderMat:
-                    print "   Material %s is already in the list"%(bmat.name)
-                    midx = i
-
-            if midx == -1:
-                # append to the list
-                MatList.append(BlenderMat)
-                print "   Appending Material %s to the list"%(BlenderMat.name)
-                midx = len(MatList) - 1
-            # ass to the index dictionary (used to get the material index back from the reference.)
-            MatIndices[icicle.fMaterialIdx] = midx
-
-        if len(MatList) > 16:
-            print "-------------------------------------------------------"
-            print "WARNING! Blender only supports 16 materials per object."
-            print "This object has %d materials." %(len(MatList))
-            print "Truncating list to 16 materials."
-            print "-------------------------------------------------------"
-            MatList = MatList[0:16]
-
-        print "   There are %d materials now on the object"%(len(MatList))
-
-        # assign these materials (Has to be assigned to the object)
-        obj.setMaterials(MatList)
-        obj.colbits=(1<< len(MatList)) - 1 # set all materials to be used
-        obj.activeMaterial = 1
-
-        print "   Mesh's material list:",obj.getMaterials()
-
-
-        # Ensure that we have the correct vertexcolor layers
-        list = mesh.getColorLayerNames()
-        if not ("Alpha" in list and "Color" in list and len(list) == 2):
-            for layer in list:
-                mesh.removeColorLayer(layer)
-            mesh.addColorLayer("Color")
-            mesh.addColorLayer("Alpha")
-
-        # Create a list of all lights in this page....
-        lights = []
-        lights.extend(root.listobjects(0x55)) # List of plDirectionalLight in this page
-        lights.extend(root.listobjects(0x56)) # List of plOmniLight in this page
-        lights.extend(root.listobjects(0x57)) # List of plSpotLight in this page
-
-
-
-        # Parse Vertex Group Mesh Data
-        for i in range(len(spanIndex.fIndices)):
-            print "   Material group",i
-            VGroup_StartIdx = len(mesh.verts) # Store the Start index for this vertex group
-            VGroup_StartFace = len(mesh.faces)
-            VGroup_GroupName = "VtxGroup" + str(len(mesh.getVertGroupNames())+1)
-
-            # get the icicle (contains material info and info about which vertexes to extract from the buffer group)
-            icicle = self.fIcicles[spanIndex.fIndices[i]]
-
-            # get the buffergroup that stores the vertices of this span
-            bufferGroup = self.fGroups[icicle.fGroupIdx]
-
-            # Ensure that we have the correct UV Layers
-            UVLayers = mesh.getUVLayerNames()
-            if len(UVLayers) < bufferGroup.GetUVCount():
-                for i in range(len(UVLayers),bufferGroup.GetUVCount()):
-                    mesh.addUVLayer("UVLayer" + str(i))
-            UVLayers = mesh.getUVLayerNames()
-
-
-            # verts is a list of all vertices in the buffergroup
-            verts=bufferGroup.fVertBuffStorage
-
-            print "    Vertices... (%d of them)"%(icicle.fVLength)
-            # Create the Vertex Group
-            mesh.addVertGroup(VGroup_GroupName)
-            for e in range(icicle.fVLength):
-                s=icicle.fVStartIdx + e  # originally used icicle.fCellOffset
-                plvert = verts[s]
-                mesh.verts.extend((Mathutils.Vector(plvert.X(),plvert.Y(),plvert.Z())))
-
-                vertidx = len(mesh.verts)-1
-                vert = mesh.verts[vertidx]
-                normalVector = Mathutils.Vector(plvert.nx,plvert.ny,plvert.nz)
-                vert.no = normalVector
-
-                if bufferGroup.GetNumSkinWeights() > 0:
-                    weight = plvert.blend[0]
-                else:
-                    weight = bufferGroup.GetSkinIndices()
-                mesh.assignVertsToGroup(VGroup_GroupName, [vertidx,] , weight, Blender.Mesh.AssignModes.REPLACE)
-
-                if e%500 == 0 and not e == 0:
-                    print "\r     %d"%(e),
-            print "\n",
-
-            # #
-            # # Blender Stores U/V Coordinates in the faces, as well as vertex colors and materials
-            # # This makes the face extractor a bit more painful as a process, sigh....
-            # #
-
-            # Begin with the face process
-            mesh.vertexColors = True # set vertex colors to true
-
-            # Get the buffer that stores the faces (Indices)
-            surface = bufferGroup.fIdxBuffStorage[icicle.fIBufferIdx]
-
-            # Extract the faces from the buffergroup by making a list of faces
-            # (Tuples of 3)
-
-            print "    Faces...    (%d of them)" %(icicle.fILength/3)
-            # Faces are stored in a giant array of icicle.fILength * (3 indices)
-            e=0
-            while e < icicle.fILength:
-                s=icicle.fIPackedIdx + e # Calculate base address for this face
-                # putthe next 3 indices into a list to make a face
-                myface = [surface[s+0]-icicle.fVStartIdx + VGroup_StartIdx, \
-                          surface[s+1]-icicle.fVStartIdx + VGroup_StartIdx, \
-                          surface[s+2]-icicle.fVStartIdx + VGroup_StartIdx  \
-                         ]
-                mesh.faces.extend((myface))
-                face = mesh.faces[len(mesh.faces)-1]
-
-                if MatIndices[icicle.fMaterialIdx] < len(MatList):
-                    face.mat = MatIndices[icicle.fMaterialIdx]
-
-                # now set vertex specific data
-                for vi in range(3):
-                    # get the vertex index in the verts array
-                    sidx=surface[s+vi]
-                    vert = verts[sidx] # get a reference to the plasma face
-
-                    mesh.activeColorLayer = "Alpha"
-                    face.col[vi].r = vert.color.a
-                    face.col[vi].g = vert.color.a
-                    face.col[vi].b = vert.color.a
-                    face.col[vi].a = 255
-
-                    mesh.activeColorLayer = "Color"
-                    face.col[vi].r = vert.color.r
-                    face.col[vi].g = vert.color.g
-                    face.col[vi].b = vert.color.b
-                    face.col[vi].a = 255
-
-                    for uvidx in range(bufferGroup.GetUVCount()):
-                        UVLayerName = UVLayers[uvidx]
-                        mesh.activeUVLayer = UVLayerName
-                        face.uv[vi].x = vert.tex[uvidx][0]
-                        face.uv[vi].y = 1-vert.tex[uvidx][1]
-
-                fcount = e/3
-                if fcount%500 == 0 and not fcount == 0:
-                    print "\r     %d"%(fcount),
-                e=e+3 # put the base index 3 places further
-            print "\n",
-
-            # Set the first UV Layer as the active one
-            if len(UVLayers) > 0:
-                mesh.activeUVLayer = UVLayers[0]
-
-            L2W=icicle.fLocalToWorld.get()
-            L2W.transpose()
-
-            # Update the normals
-            mesh.calcNormals()
-
-             # Lighting - Still need to find a way to have lamps being processed first....
-
-            if MatIndices[icicle.fMaterialIdx] < len(MatList):
-                mat = MatList[MatIndices[icicle.fMaterialIdx]]
-                if len(icicle.fPermaLights.vector) + len(icicle.fPermaProjs.vector) > 0:
-                    mat.mode &= ~Blender.Material.Modes["SHADELESS"]
-
-                    # Only assign a lightgroup if not all lamps in the page are linked to this object
-                    if (len(icicle.fPermaLights.vector) + len(icicle.fPermaProjs.vector)) < len(lights):
-                        print "    Limited light sources (%d sources)"%(len(icicle.fPermaLights.vector) + len(icicle.fPermaProjs.vector))
-
-                        lightgroup = Blender.Group.New(str(mat.name))
-                        objlist = Blender.Scene.GetCurrent().objects
-                        for obj in objlist:
-                            if obj.getType() == "Lamp":
-                                dataname = obj.getData(True) # first param set to True, returns only datablock's name as string
-                                for a in icicle.fPermaLights.vector:
-                                    if str(a.Key.name) == str(obj.name) or str(a.Key.name) == dataname:
-                                        print "     Connecting Light",str(a.Key.name),"to lamp",str(obj.name)
-                                        lightgroup.objects.link(obj)
-
-                                for a in icicle.fPermaProjs.vector:
-                                    if str(a.Key.name) == str(obj.name) or str(a.Key.name) == dataname:
-                                        print "     Connecting Light",str(a.Key.name),"to lamp",str(obj.name)
-                                        lightgroup.objects.link(obj)
-                        # Assign the light group to the material
-                        mat.lightGroup = lightgroup
-                        # And set the group_exclusive bit
-                        mat.mode |= Blender.Material.Modes["GROUP_EXCLUSIVE"]
-                    else:
-                        print "    Fully lit object (%d sources)"%(len(icicle.fPermaLights.vector) + len(icicle.fPermaProjs.vector))
-
-                else:
-                    print "    Shadeless object"
-
-                    mat.mode |= Blender.Material.Modes["SHADELESS"]
-
-         # set object to display in first layer
-        obj.layers=[1,]
-
-
     def find_buffer_group(self,HasSkinIdx,NumSkinWeights,UVCount,num_vertexs):
         # Find or create a buffer group corresponding to current format
 
-        # Each Buffergroup can store a maximum of 0xffff vertices of a specific format (however we allow only 0x8000)
+        # Each Buffergroup can store a maximum of 0xffff vertices of a specific format
         # Format is based on:
         #
         # HasSkinIdx - (bool) Does it have Skin Indexes or not
@@ -1194,7 +947,7 @@ class plDrawableSpans(plDrawable):
         for idx in range(len(self.fGroups)):
             bufferGroup=self.fGroups[idx]
             if bufferGroup.GetSkinIndices()==bool(HasSkinIdx) and bufferGroup.GetNumSkinWeights()==NumSkinWeights \
-                and bufferGroup.GetUVCount()==UVCount and len(bufferGroup.fVertBuffStorage)+num_vertexs<0x8000:
+                and bufferGroup.GetUVCount()==UVCount and len(bufferGroup.fVertBuffStorage)+num_vertexs<0xffff:
                 return idx
 
         #not found - create a new bufferGroup with the required format
@@ -1247,7 +1000,7 @@ class plDrawableSpans(plDrawable):
         return self.findMaterial(name)
 
     def export_obj(self,obj,dynamic,MaterialGroups=[],water = False):
-        print "  [DrawableSpans %08x_%x]"%(self.fRenderLevel.fLevel,self.fCriteria)
+        print("  [DrawableSpans %08x_%x]"%(self.fRenderLevel.fLevel,self.fCriteria))
         root=self.getRoot()
 
         # Now, we must store the vertices group by group.
@@ -1256,25 +1009,25 @@ class plDrawableSpans(plDrawable):
         # if the object doesn't get a transformation matrix
 
         obj_l2w=getMatrix(obj)
-        obj_l2w.transpose()
+        #obj_l2w.transpose()
         LocalToWorld=hsMatrix44()
         LocalToWorld.set(obj_l2w)
-        script = AlcScript.objects.Find(obj.getName())
+        script = AlcScript.objects.Find(obj.name)
 
         # Prepare a span index object, in which we can add our span indices
         spanIndex = plDISpanIndex()
 
-        print "   Processing Faces per Material - Totalling",len(MaterialGroups),"materials"
+        print("   Processing Faces per Material - Totalling",len(MaterialGroups),"materials")
 
         # loop through the groups
         for MatGroup in MaterialGroups:
             mat = MatGroup['mat'] # For Quick reference...
             matidx = self.addMaterial(MatGroup['mat'],obj,root)
 
-            print "   Material",MatGroup["mat"].name
+            print("   Material",MatGroup["mat"].name)
 
-            if len(MatGroup["vertices"]) > 0x8000:
-                raise RuntimeError, "Vertex count (=%i) on this material is above 32768, consider breaking up your object into several materials...." %len(MatGroup["vertices"])
+            if len(MatGroup["vertices"]) > 0xffff: # bring this down to 0x8000 again if it bothers you.
+                raise RuntimeError("Vertex count on this material is too high, consider breaking up your object into several materials....")
 
             # Find the correct buffer group to store this, depending on
             # having skin indices, nr of vertex weights, nr of uvmaps and amount of vertices
@@ -1362,23 +1115,23 @@ class plDrawableSpans(plDrawable):
 
             if water:
                 icicle.fProps |= (plSpan.Props["kWaterHeight"] | plSpan.Props["kLiteVtxNonPreshaded"] | plSpan.Props["kPropRunTimeLight"] | plSpan.Props["kPropReverseSort"] | plSpan.Props["kPropNoShadow"])
-                icicle.fWaterHeight = obj.loc[2]
+                icicle.fWaterHeight = obj.location[2]
             
             flags = FindInDict(script,"visual.icicle",None)
             if type(flags) == list:
                 icicle.fProps = 0
                 for flag in flags:
                     if flag.lower() in plSpan.scriptProps:
-                        print "    set flag: " + flag.lower()
+                        print("    set flag: " + flag.lower())
                         icicle.fProps |= plSpan.scriptProps[flag.lower()]
             elif type(flags) == int:
                 # the old way
-                print "Warning: setting icicle properties as int is depreciated"
+                print("Warning: setting icicle properties as int is depreciated")
                 icicle.fProps = flags
             
             
             
-            # Get the minimal and maximal visibility distance for this object
+            # bind object properties to icicle's mindist and maxdist
             icicle.fMinDist = getStrIntPropertyOrDefault(obj,"mindist",-1)
             icicle.fMaxDist = getStrIntPropertyOrDefault(obj,"maxdist",-1)
 
@@ -1401,7 +1154,7 @@ class plDrawableSpans(plDrawable):
             # Else, we just give an identity matrix.
             if dynamic:
                 matrix=getMatrix(obj)
-                matrix.transpose()
+                #matrix.transpose()
                 icicle.fLocalToWorld.set(matrix)
 
                 matrix.invert()
@@ -1419,26 +1172,28 @@ class plDrawableSpans(plDrawable):
             lights.extend(root.listobjects(0x6A)) # List of plLimitedDirLight in this page
 
             # Obtain light group
-            lightGroup = MatGroup['mat'].lightGroup
+            lightGroup = MatGroup['mat'].light_group
 
             mylights = []
 
             # Only add lights for this icicle if we are not "SHADELESS"
-            if not mat.mode & Blender.Material.Modes["SHADELESS"]:
+            if not mat.use_shadeless:
                 if not lightGroup == None:
                     # if a lightgroup is set, use those lights, else use all lights in the page....
                     for pllamp in lights:
                         for lobj in list(lightGroup.objects):
-                            dataname = lobj.getData(True) # First param sets return of name only
+                            # TODO - make sure this is correct
+                            #dataname = lobj.getData(True) # First param sets return of name only
+                            dataname = lobj.name
                             if str(pllamp.data.Key.name) == lobj.name or str(pllamp.data.Key.name) == dataname:
                                 mylights.append(pllamp)
                 else:
                     mylights = lights
             else:
-                print "    Object is Shadeless, not appending any lamps"
+                print("    Object is Shadeless, not appending any lamps")
 
             for pllamp in mylights:
-                print "    Appending Light %s as lightobject to object %s" % (str(pllamp.data.Key.name),obj.name)
+                print("    Appending Light %s as lightobject to object %s" % (str(pllamp.data.Key.name),obj.name))
                 pllampref = pllamp.data.getRef()
                 # see if it is a projection or not...
                 if pllamp.data.fProjection.isNull():
@@ -1549,11 +1304,11 @@ class plDrawInterface(plObjInterface):
 
     def import_obj(self,obj):
         root = self.getRoot()
-        print " [DrawInterface %s]"%(str(self.Key.name))
+        print(" [DrawInterface %s]"%(str(self.Key.name)))
 
         # Import all drawables in this list
         for i in range(len(self.fDrawableIndices)):
-            print "  Importing set",(i+1),"of",len(self.fDrawableIndices)
+            print("  Importing set",(i+1),"of",len(self.fDrawableIndices))
             group = self.fDrawableIndices[i]
             spanref = self.fDrawables[i]
             drawspans = root.findref(spanref)
@@ -1577,7 +1332,7 @@ class plDrawInterface(plObjInterface):
         else:
             drawi=page.prp.findref(drawiref)
         if drawi==None:
-            raise "ERROR: DrawInterface %s - %s not found!" %(str(scnobj.data.Key),str(drawiref))
+            raise RuntimeError("ERROR: DrawInterface %s - %s not found!" %(str(scnobj.data.Key),str(drawiref)))
 
         drawi.data.export_obj(obj,SceneNodeRef,isdynamic,softVolParser, water)
         # update draw interface
@@ -1587,14 +1342,23 @@ class plDrawInterface(plObjInterface):
 
     def export_obj(self,obj,SceneNodeRef,isdynamic,softVolParser, water = False):
 
-        if obj.getType() != "Mesh":
+        if obj.type != "MESH":
             return
 
         # Get Object Name
         name = obj.name
 
-        #Get the Mesh data (not NMesh)
-        mesh = obj.getData(False,True)
+        #Get the Mesh data
+        # to_mesh allows us to apply all modifiers firsthand
+        mesh = obj.to_mesh(bpy.context.scene, True, "RENDER", True)
+        
+        # triangulate the newly created mesh
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        bm.free()
+        del bm
 
         #Set up some stuff
         root = self.getRoot()
@@ -1602,12 +1366,12 @@ class plDrawInterface(plObjInterface):
         weightCount = 0
         materialGroups = []
         spansList = {}
-        objscript = AlcScript.objects.Find(obj.getName())
+        objscript = AlcScript.objects.Find(obj.name)
 
         #Begin exporting
-        print " [Draw Interface %s]" % name
+        print(" [Draw Interface %s]" % name)
 
-        if obj.drawMode & Blender.Object.DrawModes["TRANSP"]:
+        if obj.show_transparent:
             blendSpan = True
 
         # First see if we have any materials associated with the mesh:
@@ -1622,31 +1386,22 @@ class plDrawInterface(plObjInterface):
 
 
         # Calculate the amount of UV Maps
-        uvMapsCount = len(mesh.getUVLayerNames())
+        uvMapsCount = len(mesh.uv_layers)
 
         # build up a weight map if neccessary, and fill it with the default value to start with
-        if len(mesh.getVertGroupNames()) > 0:
+        if len(obj.vertex_groups) > 0:
             weightCount = 1 # Blender supports only one weight :)
         
-        # if the object has modifiers, apply them
-        if len(obj.modifiers) > 0:
-            if len(mesh.getVertGroupNames()) == 0:
-                mesh = Mesh.New()
-                # ignore the OB/ME switch and only use materials linked to the mesh, as with modifier-less objects
-                savedcolbits = obj.colbits
-                obj.colbits = 0
-                mesh.getFromObject(obj)
-                obj.colbits = savedcolbits
-            else:
-                print "  WARNING: This object has both modifiers (" + ", ".join(m.name for m in obj.modifiers) + ") and vertex groups (" + ", ".join(mesh.getVertGroupNames()) + "),"
-                print "           which is not supported by PyPRP. Ignoring the modifiers."
+        # TODO: make sure this is correct
+        if len(obj.modifiers) > 0 and len(obj.vertex_groups) > 0:
+            raise RuntimeException("This object has both modifiers (" + ", ".join(m.name for m in obj.modifiers) + ") and vertex groups, which is not supported by PyPRP.")
 
         # recompute the normals if requested (they will be overwritten with Blender-computed normals again next time edit mode is exited for the mesh)
         if getTextPropertyOrDefault(obj, "renormal", FindInDict(objscript, "visual.renormal", None)) == "areaweighted":
             # compute vertex normals as the average of the face normals of all faces adjacent to the vertex, weighted by face area
-            normals = [Mathutils.Vector((0, 0, 0)) for i in range(len(mesh.verts))]
-            for f in mesh.faces:
-                n = f.area*f.no
+            normals = [Mathutils.Vector((0, 0, 0)) for i in range(len(mesh.vertices))]
+            for f in mesh.polygons:
+                n = f.area*f.normal
                 for v in f:
                     normals[v.index] += n
             for i, n in enumerate(normals):
@@ -1662,9 +1417,9 @@ class plDrawInterface(plObjInterface):
                 useSticky = 0
 
                 # Loop through Layers
-                for mtex in mat.getTextures():
+                for mtex in mat.texture_slots:
                     if not mtex is None:
-                        if mtex.texco == Blender.Texture.TexCo["STICK"] and mesh.vertexUV:
+                        if mtex.texture_coords == "STICK" and mesh.vertexUV:
                             useSticky = 1
 
                 UVCount = uvMapsCount + useSticky
@@ -1684,99 +1439,74 @@ class plDrawInterface(plObjInterface):
 
         # process the faces and their vertices, and store them based on their material
         # some maps that will be heavily used
-        ColorLayers = mesh.getColorLayerNames()
-        UVLayers = mesh.getUVLayerNames()
+        ColorLayers = mesh.vertex_colors
+        UVLayers = mesh.uv_layers
 
-        auto_col = None # cache auto_col layer
-        for mface in mesh.faces:
-            if (len(mface.verts) < 3) or (len(mface.verts) > 4):
-                continue # ignore this face (too many verts)
+        colorMapIndex = 0
+        for mface in mesh.polygons:
+            if (len(mface.vertices) < 3) or (len(mface.vertices) > 4):
+                raise RuntimeError("Triangulated mesh doesn't use triangles... whaaaaat ? (", len(mface.vertices) + "vertices)")
 
             vertIdxs = []
-            baseVertexIdx = len(materialGroups[mface.mat]["vertices"])
+            baseVertexIdx = len(materialGroups[mface.material_index]["vertices"])
 
             index = 0
-            for vector in mface.verts:
+            for vector in mface.vertices:
                 # convert to Plasma vertex
                 v = Vertex()
 
                 # coordinates
-                v.x = vector.co[0]
-                v.y = vector.co[1]
-                v.z = vector.co[2]
+                v.x = mesh.vertices[vector].co[0]
+                v.y = mesh.vertices[vector].co[1]
+                v.z = mesh.vertices[vector].co[2]
 
                 # normal
-                v.nx = vector.no[0]
-                v.ny = vector.no[1]
-                v.nz = vector.no[2]
+                v.nx = mesh.vertices[vector].normal[0]
+                v.ny = mesh.vertices[vector].normal[1]
+                v.nz = mesh.vertices[vector].normal[2]
 
-                # Vertex Colors
-                def find_layers(layers, col_name, alpha_name):
-                    """Helper that loops over the color layers and finds what we want"""
-                    col, alpha = None, None
-                    for layer in layers:
-                        if layer.lower() == col_name:
-                            col = layer
-                        elif layer.lower() == alpha_name:
-                            alpha = layer
-                        if col and alpha:
-                            break
-                    return col, alpha
+                # vertex colors - TODO: bring back changes from newest version of PyPRP
+                if len(ColorLayers) > 0:
+                    try:
+                        col_a=255
+                        col_r=255
+                        col_g=255
+                        col_b=255
+                        actindex = 0
+                        for vc in ColorLayers:
+                            if(vc.name.lower() == "col" or vc.name.lower() == "lightmap"): #Mesh vertex colours
+                                col = vc.data[colorMapIndex].color
+                                col_r=int(col.r *255)
+                                col_g=int(col.g *255)
+                                col_b=int(col.b *255)
+                                #if col_a >= 1.0: #See if there is alpha on the colour map
+                                #    col_a = mface.col[index].a
+                            elif(vc.name.lower() == "alpha"): #Mesh vertex alpha
+                                col = vc.data[colorMapIndex].color
+                                col_a = int((col.r + col.g + col.b) / 3.0 * 255)
+                                materialGroups[mface.material_index]["vtxalphacol"] = True
+                                blendSpan = True
+                            actindex += 1
 
-                # Stage 1: Fiddle with baked colors
-                _mask = Blender.Material.Modes["VCOL_LIGHT"]
-                if mesh.materials[mface.mat].mode & _mask:
-                    if auto_col is None:
-                        # search for an auto_col from a bungled export. this is
-                        # just in case bungler decided to rename it to aUtO_cOl
-                        auto_col, alpha_layer = find_layers(ColorLayers, "auto_col", "alpha")
-                        if auto_col is None: # still?!
-                            auto_col = "auto_col"
-                            mesh.addColorLayer(auto_col)
-                        mesh.vertexShade(obj) # actually shade the object
-                    col_layer = auto_col
-                else:
-                    # we want manual colors
-                    col_layer, alpha_layer = find_layers(ColorLayers, "col", "alpha")
-
-                # VCols 2: Copy appropriate colors to vertex data
-                try:
-                    if alpha_layer is None:
-                        col_a = 255
-                    else:
-                        mesh.activeColorLayer = alpha_layer
-                        col_a = (mface.col[index].r + mface.col[index].g + mface.col[index].b) / 3.0
-                        materialGroups[mface.mat]["vtxalphacol"] = True
-                        blendSpan = True
-
-                    if col_layer is None:
-                        col_r = 255
-                        col_g = 255
-                        col_b = 255
-                    else:
-                        mesh.activeColorLayer = col_layer
-                        col_r = mface.col[index].r
-                        col_g = mface.col[index].g
-                        col_b = mface.col[index].b
-                    v.color = RGBA(col_r, col_g, col_b, col_a)
-                except IndexError:
-                    pass
+                        v.color = RGBA(col_r,col_g,col_b,col_a)
+                    except IndexError:
+                        pass
 
                 # Blend weights.
                 if weightCount > 0:
+                    # TODO
                     bone,weight = mesh.getVertexInfluences(vector.index)
                     v.blends = [weight,]
 
                 # UV Maps
-                for uvlayer in UVLayers:
-                    mesh.activeUVLayer = uvlayer
-
-                    tex_u = mface.uv[index][0]
-                    tex_v = 1-mface.uv[index][1]
+                for i in range(len(UVLayers)):
+                    tex_u = mesh.uv_layers[i].data[mface.loop_indices[index]].uv[0]
+                    tex_v = 1-mesh.uv_layers[i].data[mface.loop_indices[index]].uv[1]
                     v.tex.append([tex_u,tex_v,0])
 
                 # Sticky Coordinates Next
-                if materialGroups[mface.mat]["Sticky"]:
+                # TODO
+                if materialGroups[mface.material_index]["Sticky"]:
                     sticky = [ vector.uv[0], 1 - vector.uv[1], 0 ]
                     v.tex.append(sticky)
 
@@ -1787,9 +1517,9 @@ class plDrawInterface(plObjInterface):
                 if True:
                     # see if we already have saved this vertex
                     try:
-                        VertexDict = materialGroups[mface.mat]["vtxdict"]
+                        VertexDict = materialGroups[mface.material_index]["vtxdict"]
                         for j in VertexDict[v.x][v.y][v.z]:
-                            vertex = materialGroups[mface.mat]["vertices"][j]
+                            vertex = materialGroups[mface.material_index]["vertices"][j]
 
                             if vertex.isfullyequal(v):
                                 # if vertex is the same, set index to that one
@@ -1800,34 +1530,29 @@ class plDrawInterface(plObjInterface):
 
                 # if vertex is unique, add it
                 if v_idx == -1:
-                    materialGroups[mface.mat]["vertices"].append(v)
-                    v_idx = len(materialGroups[mface.mat]["vertices"]) -1
+                    materialGroups[mface.material_index]["vertices"].append(v)
+                    v_idx = len(materialGroups[mface.material_index]["vertices"]) -1
 
                     # Store this one in the dict
-                    VertexDict = materialGroups[mface.mat]["vtxdict"]
-                    if not VertexDict.has_key(v.x):
+                    VertexDict = materialGroups[mface.material_index]["vtxdict"]
+                    if v.x not in VertexDict:
                         VertexDict[v.x] = {}
-                    if not VertexDict[v.x].has_key(v.y):
+                    if v.y not in VertexDict[v.x]:
                         VertexDict[v.x][v.y] = {}
-                    if not VertexDict[v.x][v.y].has_key(v.z):
+                    if v.z not in VertexDict[v.x][v.y]:
                         VertexDict[v.x][v.y][v.z] = []
                     VertexDict[v.x][v.y][v.z].append(v_idx)
 
                 # and store the vertex index in our face list
                 vertIdxs.append(v_idx)
                 index += 1
-
-            if len(mface.verts) == 3:
-                materialGroups[mface.mat]["faces"].append(vertIdxs)
-            elif len(mface.verts) == 4: # a quad must be separated into two triangles
-                materialGroups[mface.mat]["faces"].append([vertIdxs[0],vertIdxs[1],vertIdxs[2]]) # first triangle
-                materialGroups[mface.mat]["faces"].append([vertIdxs[0],vertIdxs[2],vertIdxs[3]]) # second triangle
-
-        # Hack?
-        # The auto_col layer will throw off the shaded view, so delete it.
-        # It's no loss--the user can make a copy himself. The shaded view is accurate as well :)
-        if auto_col:
-            mesh.removeColorLayer(auto_col)
+                colorMapIndex += 1
+            # TODO: bring back changes from newest versions of PyPRP
+            if len(mface.vertices) == 3:
+                materialGroups[mface.material_index]["faces"].append(vertIdxs)
+            elif len(mface.vertices) == 4: # a quad must be separated into two triangles
+                materialGroups[mface.material_index]["faces"].append([vertIdxs[0],vertIdxs[1],vertIdxs[2]]) # first triangle
+                materialGroups[mface.material_index]["faces"].append([vertIdxs[0],vertIdxs[2],vertIdxs[3]]) # second triangle
 
         for MatGroup in materialGroups:
             if not MatGroup is None:
@@ -1850,7 +1575,7 @@ class plDrawInterface(plObjInterface):
                 RenderLevel = plRenderLevel()
                 Criteria = 0
                 Props = 0
-                Suff = str(obj.passIndex)
+                Suff = str(obj.pass_index)
                 IntSuff = int(Suff)
 
                 #if Suff != '0':
@@ -1944,7 +1669,7 @@ class plDrawInterface(plObjInterface):
                 DSpansName = str(root.name) + "_District_" + str(root.page) + "_" + Name_RenderLevel + "_" + Name_Crit + suffix
 
                 # Create the entry if it doesn't exist yet...
-                if not spansList.has_key(DSpansName):
+                if DSpansName not in spansList:
                     spansList[DSpansName] = {'MatGroups': [], \
                                              'RenderLevel': RenderLevel.fLevel, \
                                              'Criteria': Criteria, \
@@ -1954,7 +1679,7 @@ class plDrawInterface(plObjInterface):
                 # And append this material to it...
                 spansList[DSpansName]['MatGroups'].append(MatGroup)
 
-        for DSpans_key in spansList.keys():
+        for DSpans_key in list(spansList.keys()):
             DSpans = spansList[DSpans_key]
             drawspans = plDrawableSpans.FindCreate(root,DSpans_key)
             drawspans.data.fSceneNode = SceneNodeRef
@@ -1980,6 +1705,10 @@ class plDrawInterface(plObjInterface):
                     vr.data.BitFlags.SetBit(plVisRegion.VecFlags["kReplaceNormal"])
                     vr.data.fRegion = volume
                     self.fRegions.append(vr.data.getRef())
+        
+        
+        # finally, clear the temporary mesh from Blender's resources.
+        bpy.data.meshes.remove(mesh)
 
 
 class plInstanceDrawInterface(plDrawInterface):
@@ -2012,7 +1741,7 @@ class plInstanceDrawInterface(plDrawInterface):
     def import_obj(self,obj):
         plDrawInterface.import_obj(self,obj)
         root = self.getRoot()
-        print " [InstanceDrawInterface %s]"%(str(self.Key.name))
+        print(" [InstanceDrawInterface %s]"%(str(self.Key.name)))
 
         # Import all drawables in this list
 
@@ -2027,10 +1756,3 @@ class plInstanceDrawInterface(plDrawInterface):
         plDrawInterface.Export(page,obj,scnobj,name,SceneNodeRef,isdynamic)
     Export = staticmethod(_Export)
 
-from prp_Types import *
-from prp_GeomClasses import *
-from prp_ConvexHull import *
-from prp_Functions import *
-from prp_Classes import *
-from prp_MatClasses import *
-from prp_LightClasses import *

@@ -19,13 +19,13 @@
 
 # Uru Types
 
-import struct,cStringIO
+import struct,io
 from prp_HexDump import *
 
 
 class ptLog:
     def __init__(self,handle,filename,mode="w"):
-        self.file=file(filename,mode)
+        self.file=open(filename,mode)
         self.handle=handle
 
 
@@ -82,7 +82,7 @@ class xPageId:
             elif self.num==-1: # or self.num==0x20:
                 self.flags=KAgeTextures
             else:
-                raise RuntimeError, "page error"
+                raise RuntimeError("page error")
 
 
     def getType(self):
@@ -110,7 +110,7 @@ class xPageId:
         a = pid & 0xFF
         b = pid >> 8
         if not self.type in [0x00,0x04,0x08,0x10]:
-            raise RuntimeError, "unknown page type"
+            raise RuntimeError("unknown page type")
         if self.type==0x04:
             assert(b & 0xFFFF00 == 0xFFFF00)
             b = b & 0x0000FF
@@ -137,7 +137,7 @@ class xPageId:
                 a = -2
                 self.flags=KAgeSDLHook
             else:
-                raise RuntimeError, "unknown page id"
+                raise RuntimeError("unknown page id")
         self.seq = b
         self.num = a
 
@@ -158,7 +158,7 @@ class xPageId:
         else:
             if self.seq<0:
                 a=0x01
-                tail=0xFFFF0000L
+                tail=0xFFFF0000
                 self.type=0x04
             else:
                 a=0x21
@@ -212,10 +212,10 @@ class Ustr:
         return self.name==other.name
 
 
-    def read(self,buf,type=1):
+    def read(self,buf,typeVAR=1): # what I wrote at some point about "str" variable names also apply to "type". Thanks for reconsidering your varnames.
         """ Returns a string from an Urustring"""
-        if type!=1:
-            self.version=type
+        if typeVAR!=1:
+            self.version=typeVAR
         size = buf.Read16()
         if self.version!=6:
             inverted = (size & 0xF000)==0xF000
@@ -226,25 +226,25 @@ class Ustr:
                 self.version=0
 
         if size>1024:
-            print "%08X %08X" %(size,buf.tell())
+            print("%08X %08X" %(size,buf.tell()))
             hexdump(buf.read(100))
-            raise RuntimeError, "sanity check on Urustring failed!, invalid file, or is corrupted!?"
+            raise RuntimeError("sanity check on Urustring failed!, invalid file, or is corrupted!?")
             return
-        str = buf.read(size)
-        str2=""
+        strING = buf.read(size)
+        str2=b""
         if self.version==5:
-            for i in range(len(str)):
-                c,=struct.unpack("B",str[i])
+            for i in range(len(strING)):
+                c,=struct.unpack("B",bytes([strING[i]]))
                 str2=str2 + struct.pack("B",c ^ 0xFF)
         elif self.version==6:
             key="mystnerd"
-            for i in range(len(str)):
-                c,=struct.unpack("B",str[i])
+            for i in range(len(strING)):
+                c,=struct.unpack("B",strING[i])
                 k,=struct.unpack("B",key[i % 8])
                 str2=str2 + struct.pack("B",c ^ k)
         else:
-            str2=str
-        self.name=str2
+            str2=strING
+        self.name=str2.decode()
         #print str2
         return self.name
 
@@ -254,24 +254,24 @@ class Ustr:
             self.version=5
         size = len(self.name)
         if size > 0x0FFF:
-            raise RuntimeError, "String is too long"
-        str=""
+            raise RuntimeError("String is too long")
+        strING=b"" # Tip: never call a variable "str". Someone is bound to curse you very hard eventually.
         if self.version==5:
             size = size | 0xF000
             for i in range(len(self.name)):
-                c,=struct.unpack("B",self.name[i])
-                str=str + struct.pack("B",c ^ 0xFF)
+                c,=struct.unpack("B",self.name[i].encode('ascii'))
+                strING=strING + struct.pack("B",c ^ 0xFF)
         elif self.version==6:
             key="mystnerd"
             for i in range(len(self.name)):
                 c,=struct.unpack("B",self.name[i])
                 k,=struct.unpack("B",key[i % 8])
-                str=str + struct.pack("B",c ^ k)
+                strING=strING + struct.pack("B",c ^ k)
         else:
-            str=self.name
+            strING=self.name
         buf.Write16(size)
 
-        buf.write(str)
+        buf.write(strING)
 
 
     def set(self,name):
@@ -433,8 +433,8 @@ class plKey:
         if (self.flag & 0x04 or self.flag & 0x02) and self.version==6:
             self.uk = buf.ReadByte()
         if self.flag not in (0x00,0x02,0x04):
-            print "%08X" % buf.tell()
-            raise RuntimeError,"WARNING flag on plKey is %02X %s" % (self.flag,self.name)
+            print("%08X" % buf.tell())
+            raise RuntimeError("WARNING flag on plKey is %02X %s" % (self.flag,self.name))
 
 
     def write(self,buf):
@@ -515,7 +515,7 @@ class plKey:
 
     def getPageNum(self):
         if self.agePrefix == 0:
-            raise RuntimeError,"Age prefix of key was never set!"
+            raise RuntimeError("Age prefix of key was never set!")
         return self.getxPageId().getNum()
 
 
@@ -527,7 +527,7 @@ class hsKeyedObject:                                 #Type 0x02
         self.Key.page_id=self.parent.page_id
         self.Key.page_type=self.parent.page_type
         if (type==0xFFFF):
-            raise RuntimeError,"hsKeyedObject::__init__(): no type specified for object %s" %(name)
+            raise RuntimeError("hsKeyedObject::__init__(): no type specified for object %s" %(name))
         self.Key.object_type=type
         self.Key.name = name
 
@@ -585,7 +585,7 @@ class hsKeyedObject:                                 #Type 0x02
         self.Key.setVersion(self.getVersion())
         self.Key.read(buf)
         if (not silent) and hsKeyedObject.Debug:
-            print "[%04X] %s" % (self.Key.object_type, self.Key.name)
+            print("[%04X] %s" % (self.Key.object_type, self.Key.name))
         assert(localType==self.Key.object_type)
 
 
@@ -621,7 +621,7 @@ class hsTArray:
 
     def append(self,item): #Gotta be smarter than the code :P
         if self.checkTypes and not item.Key.object_type in self.AllowedTypes:
-            raise RuntimeError, "Type %04X is not Allowed in this vector." % item.Key.object_type
+            raise RuntimeError("Type %04X is not Allowed in this vector." % item.Key.object_type)
         self.vector.append(item)
         self.size = len(self.vector)
 
@@ -644,7 +644,7 @@ class hsTArray:
         o = UruObjectRef(self.ver)
         o.read(buf)
         if self.checkTypes and len(self.AllowedTypes) > 0 and not o.Key.object_type in self.AllowedTypes:
-            raise RuntimeError, "Type %04X is not Allowed in this vector." % o.Key.object_type
+            raise RuntimeError("Type %04X is not Allowed in this vector." % o.Key.object_type)
         self.vector.append(o)
 
     def Trash(self):
@@ -756,7 +756,7 @@ class pRaw(hsKeyedObject):
         hsKeyedObject.read(self,buf)
         size=size-(buf.tell()-st)
         #self.data=hsStream
-        self.data=cStringIO.StringIO()
+        self.data=io.BytesIO()
         self.data.write(buf.read(size))
         self.data.seek(0)
 
@@ -774,12 +774,12 @@ class pRaw(hsKeyedObject):
     def changePageRaw(self,sid,did,stype,dtype):
         hsKeyedObject.changePageRaw(self,sid,did,stype,dtype)
         self.data.seek(0)
-        print "change page %08X %08X %04X %04X" %(sid,did,stype,dtype)
+        print("change page %08X %08X %04X %04X" %(sid,did,stype,dtype))
         foo = self.data.read(4)
         while foo!="" and len(foo)==4:
             foo, = struct.unpack("<I",foo)
             if foo==sid:
-                print "checking %08X %08X" %(foo,sid),
+                print("checking %08X %08X" %(foo,sid))
                 bar = self.data.read(2)
                 if bar=="" or len(bar)!=2:
                     return
@@ -788,7 +788,7 @@ class pRaw(hsKeyedObject):
                     self.data.seek(-6,1)
                     self.data.write(struct.pack("<I",did))
                     self.data.write(struct.pack("<H",dtype))
-                    print "key changed"
+                    print("key changed")
                 else:
                     self.data.seek(-5,1)
             else:
@@ -809,7 +809,7 @@ class UruObjectRef:
     def read(self,buf):
         if self.Key.version==6:
             self.Key.read(buf)
-            if self.Key.page_id==0xFFFFFFFFL:
+            if self.Key.page_id==0xFFFFFFFF:
                 self.flag=0
             else:
                 self.flag=1
@@ -818,14 +818,14 @@ class UruObjectRef:
             if self.flag==0x01:
                 self.Key.read(buf)
             elif self.flag!=0x00:
-                raise RuntimeError,"WARNING, Object Ref flag must be 0x01 or 0x00! - found %02X" %(self.flag)
+                raise RuntimeError("WARNING, Object Ref flag must be 0x01 or 0x00! - found %02X" %(self.flag))
 
 
     def write(self,buf):
         if self.Key.version==6:
             if self.flag==0:
                 null=plKey(self.Key.version)
-                null.page_id=0xFFFFFFFFL
+                null.page_id=0xFFFFFFFF
                 null.write(buf)
             else:
                 self.Key.write(buf)
