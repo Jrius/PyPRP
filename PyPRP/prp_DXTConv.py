@@ -220,7 +220,7 @@ class tDxtImage(tImage):
         texels=(self.w*self.h)/self.texel
         size=(self.w*self.h)
         if self.type==1:
-            size=size/2
+            size=size//2
         self.rawdata.write(buf.read(size))
 
 

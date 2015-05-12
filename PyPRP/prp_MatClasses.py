@@ -1551,10 +1551,9 @@ class plBitmap(hsKeyedObject):               # Type 0x03
             mipmapinfo = blMipMapInfo()
             mipmapinfo.read(stream)
             return mipmapinfo
-        except Exception as ex:
+        except:
             print("    WARNING: Problem reading Texture Cache (in infos)")
-            print("             PLEASE REMOVE YOUR OLD TEXTURE CACHE FILES\nInfos:")
-            print(ex)
+            print("             PLEASE REMOVE YOUR OLD TEXTURE CACHE FILES")
             return None
 
 
@@ -1572,9 +1571,10 @@ class plBitmap(hsKeyedObject):               # Type 0x03
             self.FullAlpha = stream.ReadBool()
             self.OnOffAlpha = stream.ReadBool()
             self.read(stream)
-        except Exception as ex:
+        except:
             print("    WARNING: Problem reading Texture Cache (in loading)")
             print("             PLEASE REMOVE YOUR OLD TEXTURE CACHE FILES\nInfos:")
+            return None
 
         stream.close()
 
