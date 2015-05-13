@@ -314,9 +314,28 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                         anim = False
 
                         if ipo != None:
-                            ipo.channel = channel
-                            if(len(ipo.curves) > 0):
-                                anim = True
+                            # WHAT CAN BE ANIMATED:
+                            #   layer offset
+                            #   layer scale
+                            #   material color
+                            #   material alpha
+                            
+                            # check whether the material has animation data for this mtex
+                            # this requires some string analysing which may be a bit ugly.
+                            # Ideally, we would check for animation_data directly inside the mtex, however it seems it's always empty...
+                            for curve in ipo.action.fcurves:
+                                path = curve.data_path
+                                if path.find("[") != -1:
+                                    whatAnimated = path[:path.find("[")]
+                                    if whatAnimated == "texture_slots":
+                                        layerAnimated = int(path[   path.find("[")+1 : path.find("].")  ])
+                                        paramAnimated = path[path.find("].")+2:]
+                                        if layerAnimated == i:
+                                            anim = True
+                                elif path == "diffuse_color":
+                                    anim = True
+                                elif path == "alpha":
+                                    anim = True
 
                         #layer = root.find(0x06,mat.name + "-" + mtex.texture.name,1)
                         layerlist.append({"mtex":mtex,"stencil":mtex.use_stencil,"channel":channel,"anim":anim})
@@ -343,7 +362,7 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                             self.fLayers.append(layer.data.getRef())
                     else:
                         chan = layer_info["channel"]
-                        animlayer = root.find(0x0043,layer.data.name,1)
+                        animlayer = root.find(0x0043,layer.data.getName(),1)
                         animlayer.data.FromBlender(obj,mat,mtex,chan)
                         animlayer.data.fUnderlay = layer.data.getRef()
                         if layer.data.fState.fMiscFlags & hsGMatState.hsGMatMiscFlags["kMiscLightMap"]:
@@ -2436,136 +2455,168 @@ class plLayerAnimation(plLayerAnimationBase):
     def FromBlender(self,obj,mat,mtex,chan = 0):
         print("   [LayerAnimation %s]"%(str(self.Key.name)))
         # We have to grab the animation stuff here...
-        ipo = mat.ipo
-        ipo.channel = chan
+        ipo = mat.animation_data
+        #ipo.channel = chan
         endFrame = 0
+        frameRate = bpy.context.scene.render.fps
+        
+        MA_R = MA_G = MA_B = MA_COL = MA_OFSX = MA_OFSY = MA_SIZEX = MA_SIZEY = None
+        
+        for curve in ipo.action.fcurves:
+            path = curve.data_path
+            if path.find("[") != -1:
+                whatAnimated = path[:path.find("[")]
+                if whatAnimated == "texture_slots":
+                    layerAnimated = int(path[   path.find("[")+1 : path.find("].")  ])
+                    paramAnimated = path[path.find("].")+2:]
+                    if layerAnimated == chan:
+                        if paramAnimated == "offset":
+                            if curve.array_index == 0:
+                                MA_OFSX = curve
+                            elif curve.array_index == 1:
+                                MA_OFSY = curve
+                        elif paramAnimated == "scale":
+                            if curve.array_index == 0:
+                                MA_SIZEX = curve
+                            elif curve.array_index == 1:
+                                MA_SIZEY = curve
+            else:
+                if path == "diffuse_color":
+                    if curve.array_index == 0:
+                        MA_R = curve
+                    elif curve.array_index == 1:
+                        MA_G = curve
+                    elif curve.array_index == 2:
+                        MA_B = curve
+                elif path == "alpha":
+                    MA_COL = curve
 
         # both offsets and scales
-        if ((Ipo.MA_OFSX in ipo) and (Ipo.MA_OFSY in ipo) and (Ipo.MA_OFSZ in ipo) and
-            (Ipo.MA_SIZEX in ipo) and (Ipo.MA_SIZEY in ipo) and (Ipo.MA_SIZEZ in ipo) and
-            (len(ipo[Ipo.MA_OFSX].bezierPoints) == len(ipo[Ipo.MA_SIZEX].bezierPoints))):
+        if (MA_OFSX and MA_OFSY and
+            MA_SIZEX and MA_SIZEY and
+            (len(MA_OFSX.keyframe_points) == len(MA_SIZEX.keyframe_points))):
 
             KeyList = []
 
             # We need to get the list of BezCurves
             # Then get the value for each and create a matrix
             # Then store that in a frame and store that in the list
-            xcurve = ipo[Ipo.MA_OFSX].bezierPoints
+            xcurve = MA_OFSX.keyframe_points
             for frm in range(len(xcurve)):
                 frame = prp_AnimClasses.hsMatrix44Key()
-                num = xcurve[frm].pt[0] - 1
+                num = xcurve[frm].co[0] * 30 / frameRate
                 frame.fFrameNum = int(num)
                 frame.fFrameTime = num/30.0
                 
                # map dynamic offsets for Plasma
-                ofsX = 0.5 - 0.5 * ipo[Ipo.MA_SIZEX].bezierPoints[frm].pt[1] + xcurve[frm].pt[1]
-                ofsY = 0.5 - 0.5 * ipo[Ipo.MA_SIZEY].bezierPoints[frm].pt[1] - ipo[Ipo.MA_OFSY].bezierPoints[frm].pt[1]
+                ofsX = 0.5 - 0.5 * MA_SIZEX.keyframe_points[frm].co[1] + xcurve[frm].co[1]
+                ofsY = 0.5 - 0.5 * MA_SIZEY.keyframe_points[frm].co[1] - MA_OFSY.keyframe_points[frm].co[1]
 
                 matx = hsMatrix44()
                 matx.translate((ofsX, ofsY, 0.0))
                 
                 # use dynamic scale
-                matx.scale(ipo[Ipo.MA_SIZEX].bezierPoints[frm].pt[1], ipo[Ipo.MA_SIZEY].bezierPoints[frm].pt[1], 1.0)
+                matx.scale(MA_SIZEX.keyframe_points[frm].co[1], MA_SIZEY.keyframe_points[frm].co[1], 1.0)
 
                 frame.fValue = matx
                 KeyList.append(frame)
 
             self.fTransformCtl = prp_AnimClasses.PrpController(0x0234, self.getVersion()) #plMatrix44Controller
             self.fTransformCtl.data.fKeys = KeyList
-            if xcurve[-1].pt[0] > endFrame:
-                endFrame = xcurve[-1].pt[0]
+            if xcurve[-1].co[0] > endFrame:
+                endFrame = xcurve[-1].co[0]
         # just offsets
-        elif (Ipo.MA_OFSX in ipo) and (Ipo.MA_OFSY in ipo) and (Ipo.MA_OFSZ in ipo):
+        elif MA_OFSX and MA_OFSY:
             KeyList = []
 
             # We need to get the list of BezCurves
             # Then get the value for each and create a matrix
             # Then store that in a frame and store that in the list
-            xcurve = ipo[Ipo.MA_OFSX].bezierPoints
+            xcurve = MA_OFSX.keyframe_points
             for frm in range(len(xcurve)):
                 frame = prp_AnimClasses.hsMatrix44Key()
-                num = xcurve[frm].pt[0] - 1
+                num = xcurve[frm].co[0] * 30 / frameRate
                 frame.fFrameNum = int(num)
                 frame.fFrameTime = num/30.0
                 
                # map dynamic offsets for Plasma
-                ofsX = 0.5 - 0.5 * mtex.size[0] + xcurve[frm].pt[1]
-                ofsY = 0.5 - 0.5 * mtex.size[1] - ipo[Ipo.MA_OFSY].bezierPoints[frm].pt[1]
+                ofsX = 0.5 - 0.5 * mtex.scale[0] + xcurve[frm].co[1]
+                ofsY = 0.5 - 0.5 * mtex.scale[1] - MA_OFSY.keyframe_points[frm].co[1]
 
                 matx = hsMatrix44()
-                matx.translate((ofsX, ofsY, ipo[Ipo.MA_OFSZ].bezierPoints[frm].pt[1]))
+                matx.translate((ofsX, ofsY, 0))
                 
                 # use static scale
-                matx.scale(mtex.size[0], mtex.size[1], 1.0)
+                matx.scale(mtex.scale[0], mtex.scale[1], 1.0)
 
                 frame.fValue = matx
                 KeyList.append(frame)
 
             self.fTransformCtl = prp_AnimClasses.PrpController(0x0234, self.getVersion()) #plMatrix44Controller
             self.fTransformCtl.data.fKeys = KeyList
-            if xcurve[-1].pt[0] > endFrame:
-                endFrame = xcurve[-1].pt[0]
+            if xcurve[-1].co[0] > endFrame:
+                endFrame = xcurve[-1].co[0]
         # just scales
-        elif (Ipo.MA_SIZEX in ipo) and (Ipo.MA_SIZEY in ipo) and (Ipo.MA_SIZEZ in ipo):
+        elif MA_SIZEX and MA_SIZEY:
             KeyList = []
 
             # We need to get the list of BezCurves
             # Then get the value for each and create a matrix
             # Then store that in a frame and store that in the list
-            xcurve = ipo[Ipo.MA_SIZEX].bezierPoints
+            xcurve = MA_SIZEX.keyframe_points
             for frm in range(len(xcurve)):
                 frame = prp_AnimClasses.hsMatrix44Key()
-                num = xcurve[frm].pt[0] - 1
+                num = xcurve[frm].co[0] * 30 / frameRate
                 frame.fFrameNum = int(num)
                 frame.fFrameTime = num/30.0
                 
                 # map static offsets *dynamically* for Plasma
-                ofsX = 0.5 - 0.5 * xcurve[frm].pt[1] + mtex.ofs[0]
-                ofsY = 0.5 - 0.5 * ipo[Ipo.MA_SIZEY].bezierPoints[frm].pt[1] - mtex.ofs[1]
+                ofsX = 0.5 - 0.5 * xcurve[frm].co[1] + mtex.offset[0]
+                ofsY = 0.5 - 0.5 * MA_SIZEY.keyframe_points[frm].co[1] - mtex.offset[1]
 
                 matx = hsMatrix44()
                 matx.translate((ofsX, ofsY, 1.0))
                 
                 # use dynamic scales
-                matx.scale(xcurve[frm].pt[1], ipo[Ipo.MA_SIZEY].bezierPoints[frm].pt[1], 1.0)
+                matx.scale(xcurve[frm].co[1], MA_SIZEY.keyframe_points[frm].co[1], 1.0)
 
                 frame.fValue = matx
                 KeyList.append(frame)
 
             self.fTransformCtl = prp_AnimClasses.PrpController(0x0234, self.getVersion()) #plMatrix44Controller
             self.fTransformCtl.data.fKeys = KeyList
-            if xcurve[-1].pt[0] > endFrame:
-                endFrame = xcurve[-1].pt[0]
+            if xcurve[-1].co[0] > endFrame:
+                endFrame = xcurve[-1].co[0]
         else:
             self.fTransformCtl = prp_AnimClasses.PrpController(0x8000, self.getVersion())
 
-        if (Ipo.MA_COL in ipo):
-            curve = ipo[Ipo.MA_COL]
+        if MA_COL:
+            curve = MA_COL
             self.fOpacityCtl = prp_AnimClasses.PrpController(0x022F, self.getVersion()) #plScalarController
             endFrame = self.fOpacityCtl.data.export_curve(curve, endFrame, 0, 100)
         else:
             self.fOpacityCtl = prp_AnimClasses.PrpController(0x8000, self.getVersion())
 
-        if (Ipo.MA_R in ipo) or (Ipo.MA_G in ipo) or (Ipo.MA_B in ipo):
+        if MA_R or MA_G or MA_B:
             # if the material color is animated, then we change the colors that control sets (preshade and runtime)
             compoundController = prp_AnimClasses.PrpController(0x023A, self.getVersion()) #plCompoundPosController
-            if (Ipo.MA_R in ipo):
-                curve = ipo[Ipo.MA_R]
+            if MA_R:
+                curve = MA_R
                 controller = prp_AnimClasses.plScalarController()
                 endFrame = controller.export_curve(curve, endFrame)
                 compoundController.data.fXController = controller
-            if (Ipo.MA_G in ipo):
-                curve = ipo[Ipo.MA_G]
+            if MA_G:
+                curve = MA_G
                 controller = prp_AnimClasses.plScalarController()
                 endFrame = controller.export_curve(curve, endFrame)
                 compoundController.data.fYController = controller
-            if (Ipo.MA_B in ipo):
-                curve = ipo[Ipo.MA_B]
+            if MA_B:
+                curve = MA_B
                 controller = prp_AnimClasses.plScalarController()
                 endFrame = controller.export_curve(curve, endFrame)
                 compoundController.data.fZController = controller
             self.fRuntimeColorCtl = compoundController
-            ambfactor = mat.getAmb()
+            ambfactor = mat.ambient
             # this should have it's curves multiplied by ambfactor. I'm lazy right now
             self.fPreshadeColorCtl = compoundController
         else:
@@ -2579,8 +2630,8 @@ class plLayerAnimation(plLayerAnimationBase):
         self.fTimeConvert = prp_AnimClasses.plAnimTimeConvert()
         self.fTimeConvert.fBegin = 0.0
         self.fTimeConvert.fLoopBegin = 0.0
-        self.fTimeConvert.fEnd = (endFrame - 1)/30.0
-        self.fTimeConvert.fLoopEnd = (endFrame - 1)/30.0
+        self.fTimeConvert.fEnd = (endFrame) / frameRate
+        self.fTimeConvert.fLoopEnd = (endFrame) / frameRate
         self.fTimeConvert.export_obj(obj,mat,mtex,chan)
 
         self.fSynchFlags |= plSynchedObject.Flags["kExcludePersistentState"]
