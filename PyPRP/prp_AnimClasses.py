@@ -1035,31 +1035,38 @@ class plScalarController(plLeafController):
     def export_curve(self, curve, endFrame, convrot=0, multfact = 1):
         pi = 3.14159265358979
         KeyList = []
-        for frm in curve.bezierPoints:
+        frameRate = bpy.context.scene.render.fps
+        for frm in curve.keyframe_points:
             frame = hsScalarKey()
-            num = frm.pt[0] - 1
+            #num = frm.co[0] - 1 # we shouldn't need to remove 1 anymore, as Blender's animations can now start at 0
+            num = frm.co[0] * (30 / frameRate) # however, don't forget to allow changing framerate
 
             frame.fFrameNum = int(num)
-            frame.fFrameTime = num/30.0
-            frame.fValue = frm.pt[1] * multfact
+            frame.fFrameTime = num/30
+            frame.fValue = frm.co[1] * multfact
             # if this is a bezier curve, set the flag and add the bez values
-            if curve.interpolation == Blender.IpoCurve.InterpTypes.BEZIER:
+            if frm.interpolation == "BEZIER": # LINEAR is used otherwise. CONSTANT is not available and always defaults to LINEAR
                 frame.fFlags |= hsKeyFrame.kBezController
                 # the current tan values are a wild guess. Have fun.
-                frame.fInTan = -(frm.vec[1][1] - frm.vec[0][1]) / (frm.vec[1][0] - frm.vec[0][0]) / 30 / (2*pi)
-                frame.fOutTan = (frm.vec[1][1] - frm.vec[2][1]) / (frm.vec[1][0] - frm.vec[2][0]) / 30 / (2*pi)
-            # if this is a rotation curve, we must convert from deg/10 to radians
-            if convrot:
-                frame.fValue = frame.fValue / 18.0 * pi
-                if curve.interpolation == Blender.IpoCurve.InterpTypes.BEZIER:
-                    frame.fInTan = frame.fInTan / 18.0 * pi
-                    frame.fOutTan = frame.fOutTan / 18.0 * pi
+                # MORE guessing when converting to new API. The output looks fine, though.
+                #frame.fInTan = -(frm.vec[1][1] - frm.vec[0][1]) / (frm.vec[1][0] - frm.vec[0][0]) / frameRate / (2*pi)
+                #frame.fOutTan = (frm.vec[1][1] - frm.vec[2][1]) / (frm.vec[1][0] - frm.vec[2][0]) / frameRate / (2*pi)
+                frame.fInTan = -(frm.co[1] - frm.handle_left[1])  / (frm.co[0] - frm.handle_left[0])  / frameRate / (2*pi)
+                frame.fOutTan = (frm.co[1] - frm.handle_right[1]) / (frm.co[0] - frm.handle_right[0]) / frameRate / (2*pi)
+                # NOTE - interpolation is set per-point, not per-curve. This means all other points' InTan and OutTan will be defaulted to zero.
+                # Hopefully this should not make a huge difference in Plasma.
+            
+            if frm.interpolation == "CONSTANT":
+                print("WARNING: constant interpolation for animations is not supported ! Using linear instead...")
+            
+            # note: rotations in animations are in radians already, no need to reconvert them from degrees.
 
             KeyList.append(frame)
         self.fKeyList = hsScalarKeyList()
         self.fKeyList.fKeys = KeyList
-        if endFrame < curve.bezierPoints[-1].pt[0]:
-            endFrame = curve.bezierPoints[-1].pt[0]
+        endpoint = curve.keyframe_points[-1].co[0] * (30 / frameRate)
+        if endFrame < endpoint:
+            endFrame = endpoint
         return endFrame
         
     def shift(self, d):
@@ -1855,16 +1862,43 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
         self.fName = FindInDict(animscript, "name", obj.name)
         print('Exporting IPO %s' % self.fName)
         endFrame = 0
+        frameRate = bpy.context.scene.render.fps
         
         # if we have any object transform curves, we add a matrix controller channel and applicator
-        if(obj.animation_data):
+        if obj.animation_data:
             ipo = obj.animation_data
             if obj.parent:
                 # deal with blender's weird method of keeping the location ipo in global space
                 ploc = obj.parent.location
             else:
                 ploc = [0, 0, 0]
-            if (Ipo.OB_LOCX in ipo) or (Ipo.OB_LOCY in ipo) or (Ipo.OB_LOCZ in ipo) or (Ipo.OB_ROTX in ipo) or (Ipo.OB_ROTY in ipo) or (Ipo.OB_ROTZ in ipo):
+            
+            # find what channels the animation data contains
+            OB_LOCX = OB_LOCY = OB_LOCZ = OB_ROTX = OB_ROTY = OB_ROTZ = OB_SCALEX = OB_SCALEY = OB_SCALEZ = None
+            for channel in ipo.action.fcurves:
+                if channel.data_path == "location": # data_path is the name of the object's variable animated
+                    if channel.array_index == 0:
+                        OB_LOCX = channel
+                    elif channel.array_index == 1:
+                        OB_LOCY = channel
+                    elif channel.array_index == 2:
+                        OB_LOCZ = channel
+                if channel.data_path == "rotation_euler": # hopefully this is the only type of rotation ever used by objects
+                    if channel.array_index == 0:
+                        OB_ROTX = channel
+                    elif channel.array_index == 1:
+                        OB_ROTY = channel
+                    elif channel.array_index == 2:
+                        OB_ROTZ = channel
+                if channel.data_path == "scale":
+                    if channel.array_index == 0:
+                        OB_SCALEX = channel
+                    elif channel.array_index == 1:
+                        OB_SCALEY = channel
+                    elif channel.array_index == 2:
+                        OB_SCALEZ = channel
+            
+            if OB_LOCX or OB_LOCY or OB_LOCZ or OB_ROTX or OB_ROTY or OB_ROTZ:
                 app = PrpController(0x0309) #plMatrixChannelApplicator
                 app.data.fEnabled = 1
                 app.data.fChannelName = obj.name
@@ -1872,24 +1906,24 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                 ctlchn = PrpController(0x02D9) #plMatrixControllerChannel()
                 ctlchn.data.fController = PrpController(0x023B) #plTMController()
                 # first, we check for OB_LOCX, OB_LOCY, OB_LOCZ
-                if (Ipo.OB_LOCX in ipo) or (Ipo.OB_LOCY in ipo) or (Ipo.OB_LOCZ in ipo):
+                if OB_LOCX or OB_LOCY or OB_LOCZ:
                     compoundController = plCompoundPosController()
-                    if (Ipo.OB_LOCX in ipo):
-                        curve = ipo[Ipo.OB_LOCX]
+                    if OB_LOCX:
+                        curve = OB_LOCX
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame)
                         controller.shift(-ploc[0])
                         compoundController.fXController = controller
         
-                    if (Ipo.OB_LOCY in ipo):
-                        curve = ipo[Ipo.OB_LOCY]
+                    if OB_LOCY:
+                        curve = OB_LOCY
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame)
                         controller.shift(-ploc[1])
                         compoundController.fYController = controller
         
-                    if (Ipo.OB_LOCZ in ipo):
-                        curve = ipo[Ipo.OB_LOCZ]
+                    if OB_LOCZ:
+                        curve = OB_LOCZ
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame)
                         controller.shift(-ploc[2])
@@ -1897,42 +1931,58 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                     ctlchn.data.fController.data.fPosController = compoundController
         
                 # then we check for OB_ROTX, OB_ROTY, OB_ROTZ
-                if (Ipo.OB_ROTX in ipo) or (Ipo.OB_ROTY in ipo) or (Ipo.OB_ROTZ in ipo):
+                if OB_ROTX or OB_ROTY or OB_ROTZ:
                     compoundController = plCompoundRotController()
-                    if(Ipo.OB_ROTX in ipo):
-                        curve = ipo[Ipo.OB_ROTX]
+                    if OB_ROTX:
+                        curve = OB_ROTX
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame, 1)
                         compoundController.fXController = controller
         
-                    if(Ipo.OB_ROTY in ipo):
-                        curve = ipo[Ipo.OB_ROTY]
+                    if OB_ROTY:
+                        curve = OB_ROTY
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame, 1)
                         compoundController.fYController = controller
         
-                    if(Ipo.OB_ROTZ in ipo):
-                        curve = ipo[Ipo.OB_ROTZ]
+                    if OB_ROTZ:
+                        curve = OB_ROTZ
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame, 1)
                         compoundController.fZController = controller
                     ctlchn.data.fController.data.fRotController = compoundController
-                # OB_SCALEX, OB_SCALEY, OB_SCALEZ
-                # scale controllers are only available in the simple variety, which is not suited to conversion from blender
-                # so this will not be implemented until somone is in dire need of it
+                
+                if OB_SCALEX or OB_SCALEY or OB_SCALEZ:
+                    # OB_SCALEX, OB_SCALEY, OB_SCALEZ
+                    # scale controllers are only available in the simple variety, which is not suited to conversion from blender
+                    # so this will not be implemented until somone is in dire need of it
+                    print("WARNING: animation scale controllers are not currently supported.")
                 
                 # the affine parts "T" part seems to correspond with the un-animated position of the object
                 # affineparts appears to be the "default" transform that is used if there is no controller available
                 objloc = obj.location
                 ctlchn.data.fAP.fT = Vertex(objloc[0], objloc[1], objloc[2])
                 ctlchn.data.fAP.fQ.setQuat(obj.matrix_basis.to_quaternion())
-                ctlchn.data.fAP.fK = Vertex(obj.size[0], obj.size[1], obj.size[2])
+                ctlchn.data.fAP.fK = Vertex(obj.scale[0], obj.scale[1], obj.scale[2])
                 self.fApps.append(self.pair(app, ctlchn))
 
         # if we have any lamp color curves, (LA_R, LA_G, LA_B) we add a lightdiffuse applicator and point controller channel
-        if(obj.type == "LAMP")and(obj.data.ipo):
-            ipo = obj.data.ipo # first, we get the lamp ipo
-            if (Ipo.LA_R in ipo) or (Ipo.LA_G in ipo) or (Ipo.LA_B in ipo):
+        if obj.type == "LAMP" and obj.data.animation_data:
+            ipo = obj.data.animation_data # first, we get the lamp ipo
+            LA_R = LA_G = LA_B = LA_E = None
+            
+            for channel in ipo.action.fcurves:
+                if channel.data_path == "color":
+                    if channel.array_index == 0:
+                        LA_R = channel
+                    elif channel.array_index == 1:
+                        LA_G = channel
+                    elif channel.array_index == 2:
+                        LA_B = channel
+                elif channel.data_path == "energy":
+                    LA_E = channel
+            
+            if LA_R or LA_G or LA_B or LA_E:
                 app = PrpController(0x030B) #plLightDiffuseApplicator
                 app.data.fEnabled = 1
                 app.data.fChannelName = obj.name
@@ -1940,28 +1990,42 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                 ctlchn = PrpController(0x0306) #plPointControllerChannel
                 ctlchn.data.fController = PrpController(0x023A) #plCompoundPosController
                 compoundController = ctlchn.data.fController.data
-                if (Ipo.LA_R in ipo):
-                    curve = ipo[Ipo.LA_R]
+                if LA_R:
+                    curve = LA_R
                     controller = plScalarController()
                     endFrame = controller.export_curve(curve, endFrame)
                     compoundController.fXController = controller
+                    
+                    if LA_E:
+                        for frame in controller.fKeyList.fKeys:
+                            frame.fValue *= LA_E.evaluate(frame.fFrameNum * frameRate/30) * 2 # from prp_LightClasses.py, it seems we need to use energy*2
     
-                if (Ipo.LA_G in ipo):
-                    curve = ipo[Ipo.LA_G]
+                if LA_G:
+                    curve = LA_G
                     controller = plScalarController()
                     endFrame = controller.export_curve(curve, endFrame)
                     compoundController.fYController = controller
+                    
+                    if LA_E:
+                        for frame in controller.fKeyList.fKeys:
+                            frame.fValue *= LA_E.evaluate(frame.fFrameNum * frameRate/30) * 2
     
-                if (Ipo.LA_B in ipo):
-                    curve = ipo[Ipo.LA_B]
+                if LA_B:
+                    curve = LA_B
                     controller = plScalarController()
                     endFrame = controller.export_curve(curve, endFrame)
                     compoundController.fZController = controller
                     
+                    if LA_E:
+                        for frame in controller.fKeyList.fKeys:
+                            frame.fValue *= LA_E.evaluate(frame.fFrameNum * frameRate/30) * 2
+                
+                ## animating other parameters (distance, cone, etc) is not supported yet. Can Plasma handle it ?
+                
                 self.fApps.append(self.pair(app, ctlchn))
 
         self.fStart = 0
-        self.fEnd = (endFrame - 1)/30.0
+        self.fEnd = endFrame/30
 
 class plAgeGlobalAnim(plAGAnim):
     def __init__(self,parent=None,name="unnamed",type=0x00F2):
