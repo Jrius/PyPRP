@@ -27,7 +27,7 @@ from bpy_extras.io_utils import (ImportHelper,
                                  ExportHelper,
                                  axis_conversion)
 
-from PyPRP.prp_export import open_file
+from PyPRP.prp_Export import open_file
 
 
 class PyPRPExport(bpy.types.Operator):
