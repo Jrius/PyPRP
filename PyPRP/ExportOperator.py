@@ -35,16 +35,19 @@ class PyPRPExport(bpy.types.Operator):
     bl_label = "PyPRP Export"
     
     filepath = StringProperty(subtype='FILE_PATH')
+    args = StringProperty()
     
     def execute(self, context):
-        filePath = bpy.path.ensure_ext(self.filepath, ".age")
+        #filePath = bpy.path.ensure_ext(self.filepath, ".age")
         
         #### EXPORT ####
         
-        open_file(self.filepath, "e_age")
+        #open_file(self.filepath, "e_age")
         
         #### DONE EXPORT ####
         
+        
+        open_file(self.filepath, self.args)
         
         
         return {'FINISHED'}
@@ -59,14 +62,41 @@ class PyPRPExport(bpy.types.Operator):
 
 
 
+
+class INFO_MT_pyprp_export(bpy.types.Menu):
+    """Creates a fancy menu"""
+    bl_idname = "INFO_MT_pyprp_export"
+    bl_label = "PyPRP"
+    
+    args = StringProperty()
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator_context = 'INVOKE_REGION_WIN'
+        layout.operator(PyPRPExport.bl_idname, text="Generate Release (.age)").args = "e_age_final"
+        layout.operator(PyPRPExport.bl_idname, text="All as full age (.age)").args = "e_age"
+        layout.operator(PyPRPExport.bl_idname, text="All as full age, per-page textures (.age)").args = "et_age"
+        layout.operator(PyPRPExport.bl_idname, text="Selection as full age (.age)").args = "es_age"
+        layout.operator(PyPRPExport.bl_idname, text="Generate single PRP with Release settings (.prp)").args = "e_prp_final"
+        layout.operator(PyPRPExport.bl_idname, text="All as single prp (.prp)").args = "e_prp"
+        layout.operator(PyPRPExport.bl_idname, text="All as single prp, per-page textures (.prp)").args = "et_prp"
+        layout.operator(PyPRPExport.bl_idname, text="All as single prp, per-page textures+generate BuiltIn (.prp)").args = "etb_prp"
+        layout.operator(PyPRPExport.bl_idname, text="Selection as single prp (.prp)").args = "es_prp"
+
+
+
 def menu_func_export(self, context):
-    self.layout.operator(PyPRPExport.bl_idname, text="PyPRP Age (.age)") # more to come
+    #self.layout.operator(PyPRPExport.bl_idname, text="PyPRP Age (.age)") # more to come
+    # more coming
+    self.layout.menu("INFO_MT_pyprp_export")
 
 
 def register():
     bpy.utils.register_class(PyPRPExport)
+    bpy.utils.register_class(INFO_MT_pyprp_export)
     bpy.types.INFO_MT_file_export.append(menu_func_export)
 
 def unregister():
+    bpy.utils.unregister_class(INFO_MT_pyprp_export)
     bpy.utils.unregister_class(PyPRPExport)
     bpy.types.INFO_MT_file_export.remove(menu_func_export)
