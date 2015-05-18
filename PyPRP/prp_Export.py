@@ -72,7 +72,7 @@ class PrpExportThread(Thread):
 
 
 
-def export_age(agename,basepath,selection=0,merge=0,pagename=None, doBuiltIn=False):
+def export_age(agename,basepath,selection=0,merge=0,pagename=None, doBuiltIn=False, unloadOnceDone=False):
     print("Exporting age %s" %agename)
     # load the alcscript
     AlcScript.LoadFromBlender()
@@ -110,11 +110,23 @@ def export_age(agename,basepath,selection=0,merge=0,pagename=None, doBuiltIn=Fal
     for page in age.pages:
         if (pagename==None or page.name==pagename or (page.name=="BuiltIn" and doBuiltIn)) and page.name!="Textures":
             page.export_all(selection)
+
+            if unloadOnceDone:
+                # Save PRP and unload it
+                page.save()
+                page.unload()
+                
+                # ... which means we have to recreate an instance of the page to avoid errors.
+                # Yes, this sounds more like a hack...
+                page.prp=PrpFile(page)
+                page.update_page()
     #save
     print("") # for formatting of output
     for page in age.pages:
         if pagename==None or page.name=="Textures" or page.name==pagename or (page.name=="BuiltIn" and doBuiltIn):
-            page.save()
+            if not unloadOnceDone or page.name=="Textures":
+                page.save()
+    
     #unload
     for page in age.pages:
         page.unload()
@@ -174,6 +186,17 @@ def open_file(filename, args):
         if w[0]=="e":
             selection=0
             merge=0
+            pass
+        elif w[0]=="el": # low memory
+            selection=0
+            merge=0
+            lowMemory=True
+            pass
+        elif w[0]=="elt": # low memory
+            selection=0
+            merge=0
+            lowMemory=True
+            prp_Config.export_textures_to_page_prp = 1
             pass
         elif w[0]=="et":
             selection=0

@@ -82,7 +82,8 @@ class INFO_MT_pyprp_export(bpy.types.Menu):
         layout.operator(PyPRPExport.bl_idname, text="All as single prp, per-page textures (.prp)").args = "et_prp"
         layout.operator(PyPRPExport.bl_idname, text="All as single prp, per-page textures+generate BuiltIn (.prp)").args = "etb_prp"
         layout.operator(PyPRPExport.bl_idname, text="Selection as single prp (.prp)").args = "es_prp"
-
+        layout.operator(PyPRPExport.bl_idname, text="All as full age, low-memory export (for Age with multiple Pages) (.age)").args = "el_age"
+        layout.operator(PyPRPExport.bl_idname, text="All as full age, low-memory export, per-page textures (.age)").args = "elt_age"
 
 
 def menu_func_export(self, context):
