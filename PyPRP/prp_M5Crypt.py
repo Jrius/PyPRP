@@ -23,7 +23,7 @@ try:
     cryptoworks=1
 except ImportError:
     cryptoworks=0
-    print("WARNING: Python Crypto Toolkit not found!, support for Myst 5 files is disabled!!")
+    #print("WARNING: Python Crypto Toolkit not found!, support for Myst 5 files is disabled!!")
 
 import struct, io, glob
 

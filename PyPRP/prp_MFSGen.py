@@ -28,8 +28,8 @@ try:
     cryptoworks=1
 except ImportError:
     cryptoworks=0
-    print("WARNING: Python Crypto Toolkit not found!,\
-    You need to install it to be able to generate valid manifest files for Alcugs Dataservers")
+    #print("WARNING: Python Crypto Toolkit not found!,\
+    #You need to install it to be able to generate valid manifest files for Alcugs Dataservers")
 
 class mfsfile:
     def __init__(self,name):
