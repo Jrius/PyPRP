@@ -1873,24 +1873,35 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
             else:
                 ploc = [0, 0, 0]
             
+            # is the channel delta ?
+            deltaLoc = False
+            deltaRot = False
+            deltaScale = False
+            
             # find what channels the animation data contains
             OB_LOCX = OB_LOCY = OB_LOCZ = OB_ROTX = OB_ROTY = OB_ROTZ = OB_SCALEX = OB_SCALEY = OB_SCALEZ = None
             for channel in ipo.action.fcurves:
-                if channel.data_path == "location": # data_path is the name of the object's variable animated
+                if "location" in channel.data_path: # data_path is the name of the object's variable animated
+                    if "delta_" in channel.data_path:
+                        deltaLoc = True
                     if channel.array_index == 0:
                         OB_LOCX = channel
                     elif channel.array_index == 1:
                         OB_LOCY = channel
                     elif channel.array_index == 2:
                         OB_LOCZ = channel
-                if channel.data_path == "rotation_euler": # hopefully this is the only type of rotation ever used by objects
+                if "rotation_euler" in channel.data_path: # hopefully this is the only type of rotation ever used by objects
+                    if "delta_" in channel.data_path:
+                        deltaRot = True
                     if channel.array_index == 0:
                         OB_ROTX = channel
                     elif channel.array_index == 1:
                         OB_ROTY = channel
                     elif channel.array_index == 2:
                         OB_ROTZ = channel
-                if channel.data_path == "scale":
+                if "scale" in channel.data_path:
+                    if "delta_" in channel.data_path:
+                        deltaScale = True
                     if channel.array_index == 0:
                         OB_SCALEX = channel
                     elif channel.array_index == 1:
@@ -1913,6 +1924,8 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame)
                         controller.shift(-ploc[0])
+                        if deltaLoc:
+                            controller.shift(obj.location[0])
                         compoundController.fXController = controller
         
                     if OB_LOCY:
@@ -1920,6 +1933,8 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame)
                         controller.shift(-ploc[1])
+                        if deltaLoc:
+                            controller.shift(obj.location[1])
                         compoundController.fYController = controller
         
                     if OB_LOCZ:
@@ -1927,29 +1942,81 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                         controller = plScalarController()
                         endFrame = controller.export_curve(curve, endFrame)
                         controller.shift(-ploc[2])
+                        if deltaLoc:
+                            controller.shift(obj.location[2])
                         compoundController.fZController = controller
                     ctlchn.data.fController.data.fPosController = compoundController
         
                 # then we check for OB_ROTX, OB_ROTY, OB_ROTZ
                 if OB_ROTX or OB_ROTY or OB_ROTZ:
                     compoundController = plCompoundRotController()
-                    if OB_ROTX:
-                        curve = OB_ROTX
-                        controller = plScalarController()
-                        endFrame = controller.export_curve(curve, endFrame, 1)
-                        compoundController.fXController = controller
-        
-                    if OB_ROTY:
-                        curve = OB_ROTY
-                        controller = plScalarController()
-                        endFrame = controller.export_curve(curve, endFrame, 1)
-                        compoundController.fYController = controller
-        
-                    if OB_ROTZ:
-                        curve = OB_ROTZ
-                        controller = plScalarController()
-                        endFrame = controller.export_curve(curve, endFrame, 1)
-                        compoundController.fZController = controller
+                    if deltaRot:
+                        if OB_ROTX and OB_ROTY and OB_ROTZ:
+                            # get object rotation, we'll need it to modify the animation afterwards
+                            quat = obj.matrix_basis.to_quaternion()
+                            
+                            # then, export animations normally
+                            controllerX = plScalarController()
+                            controllerY = plScalarController()
+                            controllerZ = plScalarController()
+                            endFrame = controllerX.export_curve(OB_ROTX, endFrame, 1)
+                            endFrame = controllerY.export_curve(OB_ROTY, endFrame, 1)
+                            endFrame = controllerZ.export_curve(OB_ROTZ, endFrame, 1)
+                            
+                            # now, we need to make clever modifications to the anims...
+                            for i in range(len(controllerX.fKeyList.fKeys)):
+                                # My knowledge of eulers and quaternions is limited - I'll assume
+                                # we have to rotate the animation's euler by the object's basis one ?
+                                # Result isn't 100% correct, but that's the closest I could find.
+                                kX = controllerX.fKeyList.fKeys[i]
+                                kY = controllerY.fKeyList.fKeys[i]
+                                kZ = controllerZ.fKeyList.fKeys[i]
+                                
+                                e = mathutils.Euler()
+                                e.x = kX.fValue; e.y = kY.fValue; e.z = kZ.fValue
+                                #e.to_quaternion()
+                                
+                                #q2 = quat.copy()
+                                #q2.rotate(e)
+                                #eFinal = q2.inverted().to_euler()
+                                
+                                e.rotate(quat)
+                                eFinal = e
+                                
+                                kX.fValue = eFinal.x
+                                kY.fValue = eFinal.y
+                                kZ.fValue = eFinal.z
+                            
+                            # finally, assign the modified animations
+                            compoundController.fXController = controllerX
+                            compoundController.fYController = controllerY
+                            compoundController.fZController = controllerZ
+                        else:
+                            raise RuntimeError("Delta rotation must have all three channels (X, Y and Z) !")
+                    else:
+                        if OB_ROTX:
+                            curve = OB_ROTX
+                            controller = plScalarController()
+                            endFrame = controller.export_curve(curve, endFrame, 1)
+                            #if deltaRot:
+                            #    controller.shift(obj.rotation_euler[0]) # meh, if only that were possible...
+                            compoundController.fXController = controller
+            
+                        if OB_ROTY:
+                            curve = OB_ROTY
+                            controller = plScalarController()
+                            endFrame = controller.export_curve(curve, endFrame, 1)
+                            #if deltaRot:
+                            #    controller.shift(obj.rotation_euler[1])
+                            compoundController.fYController = controller
+            
+                        if OB_ROTZ:
+                            curve = OB_ROTZ
+                            controller = plScalarController()
+                            endFrame = controller.export_curve(curve, endFrame, 1)
+                            #if deltaRot:
+                            #    controller.shift(obj.rotation_euler[2])
+                            compoundController.fZController = controller
                     ctlchn.data.fController.data.fRotController = compoundController
                 
                 if OB_SCALEX or OB_SCALEY or OB_SCALEZ:
