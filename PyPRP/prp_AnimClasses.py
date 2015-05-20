@@ -679,7 +679,7 @@ class plAnimStage:
         s.Write32(self.fBackType)
         s.Write32(self.fAdvanceType)
         s.Write32(self.fRegressType)
-        s.Write32(self.fLoops)
+        s.WriteSigned32(self.fLoops)
         s.WriteBool(self.fDoAdvanceTo)
         s.Write32(self.fAdvanceTo)
         s.WriteBool(self.fDoRegressTo)
