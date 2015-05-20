@@ -89,7 +89,7 @@ class plAudioInterface(plObjInterface):             #Type 0x11
             aud.data.fSceneObj = SceneNodeRef
             for WSound in MultiSounds:
                 WSoundScript = WSound[(list(WSound.keys())[0])]
-                if string.lower(FindInDict(WSoundScript, "sound.buffer", "stream")) == "static":
+                if FindInDict(WSoundScript, "sound.buffer", "stream").lower() == "static":
                     win32snd = plWin32StaticSound.FindCreate(page, (list(WSound.keys())[0]))
                 else:
                     win32snd = plWin32StreamingSound.FindCreate(page, (list(WSound.keys())[0]))
@@ -101,7 +101,7 @@ class plAudioInterface(plObjInterface):             #Type 0x11
             scnobj.data.audio = audioIface.data.getRef()
         else:
             #Generate all of the fun plSound stuff >.<
-            if string.lower(FindInDict(objscript, "sound.buffer", "stream")) == "static":
+            if FindInDict(objscript, "sound.buffer", "stream").lower() == "static":
                 win32snd = plWin32StaticSound.FindCreate(page, name)
             else:
                 win32snd = plWin32StreamingSound.FindCreate(page, name)#Create the Win32 streaming sound
@@ -231,7 +231,7 @@ class plWAVHeader:
         oggfile = open(oggFileName,'rb')
         try:
             # OGG packet header
-            assert oggfile.read(4) == 'OggS'
+            assert oggfile.read(4) == b'OggS'
             streamVersion = struct.unpack("<B", oggfile.read(1))[0]
             assert streamVersion == 0
             headerTypeFlag = struct.unpack("<B", oggfile.read(1))[0]
@@ -248,18 +248,18 @@ class plWAVHeader:
             # VORBIS header
             headerType = struct.unpack("<B", oggfile.read(1))[0]
             assert headerType == 1
-            assert oggfile.read(6) == 'vorbis'
+            assert oggfile.read(6) == b'vorbis'
             vorbisVersion = struct.unpack("<I", oggfile.read(4))[0]
             assert vorbisVersion == 0 
-        except:
-            raise IOError("The file %s was not a valid OGG file" % oggFileName)
+        except Exception as ex:
+            raise IOError("The file %s was not a valid OGG file \n%s" % (oggFileName, ex))
 
         # It is a valid OGG VORBIS file!
         self.fNumChannels = struct.unpack("<B", oggfile.read(1))[0]
         self.fNumSamplesPerSec = struct.unpack("<I",oggfile.read(4))[0]
         oggfile.close()
         self.fBitsPerSample = 16
-        self.fBlockAlign = self.fNumChannels * (self.fBitsPerSample / 8)
+        self.fBlockAlign = int(self.fNumChannels * (self.fBitsPerSample / 8))
         self.fAvgBytesPerSec = self.fBlockAlign * self.fNumSamplesPerSec
 
 
@@ -672,11 +672,11 @@ class plWin32Sound(plSound):
         print("Dump() deprecated on Audio and Sound classes")
 
     def getFullFileName(self, filename):
-        fullFileName = os.path.expandpath(filename)
+        fullFileName = os.path.abspath(filename)
         if not os.path.exists(fullFileName):
             # Try the sound directory
             baseFilename = os.path.basename(filename)
-            fullFileName = bpy.types.UserPreferencesFilePaths.sound_directory + "/" + baseFilename
+            fullFileName = bpy.context.user_preferences.filepaths.sound_directory + "/" + baseFilename
             if not os.path.exists(fullFileName):
                 # Look in the same directory as the .blend file
                 blendfile = bpy.data.filepath
@@ -754,7 +754,7 @@ class plWin32Sound(plSound):
         if(chan == "left"):
             sbuff.data.fFlags |= plSoundBuffer.Flags["kOnlyLeftChannel"]
         #fix for static sounds: only make streaming sounds play the ogg file!
-        if string.lower(FindInDict(objscript, "sound.buffer", "stream")) != "static":
+        if FindInDict(objscript, "sound.buffer", "stream").lower() != "static":
             sbuff.data.fFlags |= plSoundBuffer.Flags["kStreamCompressed"]
         self.fDataBuffer = sbuff.data.getRef() #We have our sound buffer
 

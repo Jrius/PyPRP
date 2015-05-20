@@ -27,7 +27,7 @@ import random, hashlib, math, binascii, struct
 def isKickable(obj):
     if not needsCoordinateInterface(obj):
         return False
-    if obj.rigid_body.enabled and obj.rigid_body.type == "ACTIVE":
+    if obj.rigid_body and obj.rigid_body.enabled and obj.rigid_body.type == "ACTIVE":
         return True
     return False
 
