@@ -37,15 +37,17 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
-import ExportOperator, AddOperators
+import ExportOperator, AddOperators, ImportPropertiesOperator
 
 def register():
     ExportOperator.register()
     AddOperators.register()
+    ImportPropertiesOperator.register()
 
 def unregister():
     ExportOperator.unregister()
     AddOperators.unregister()
+    ImportPropertiesOperator.unregister()
 
 if __name__ == "__main__":
     register()
