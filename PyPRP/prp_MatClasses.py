@@ -313,7 +313,7 @@ class hsGMaterial(plSynchedObject):         # Type 0x07
                         channel = i
                         anim = False
 
-                        if ipo != None:
+                        if ipo and ipo.action:
                             # WHAT CAN BE ANIMATED:
                             #   layer offset
                             #   layer scale

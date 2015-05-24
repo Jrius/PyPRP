@@ -1865,7 +1865,7 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
         frameRate = bpy.context.scene.render.fps
         
         # if we have any object transform curves, we add a matrix controller channel and applicator
-        if obj.animation_data:
+        if obj.animation_data and obj.animation_data.action:
             ipo = obj.animation_data
             if obj.parent:
                 # deal with blender's weird method of keeping the location ipo in global space
@@ -2034,7 +2034,7 @@ class plAGAnim(plSynchedObject):                #Type 0x6B
                 self.fApps.append(self.pair(app, ctlchn))
 
         # if we have any lamp color curves, (LA_R, LA_G, LA_B) we add a lightdiffuse applicator and point controller channel
-        if obj.type == "LAMP" and obj.data.animation_data:
+        if obj.type == "LAMP" and obj.data.animation_data and obj.data.animation_data.action:
             ipo = obj.data.animation_data # first, we get the lamp ipo
             LA_R = LA_G = LA_B = LA_E = None
             
