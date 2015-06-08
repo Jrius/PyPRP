@@ -1382,7 +1382,15 @@ class plDrawInterface(plObjInterface):
 
         # And if not, then fail miserably >:D
         if matcount == 0:
-            raise AttributeError("Object %s has no material. Export cannot continue!" % name)
+            try:
+                defaultmat = bpy.data.materials["DEFAULT"]
+            except:
+                defaultmat = bpy.data.materials.new("DEFAULT")
+                # setup the material: ideally we'd use shadeless and no specularity, but it might make
+                # the object hard to see. So we'll just disable specularity.
+                defaultmat.specular_intensity = 0
+            print("    Object %s does not have a material, adding one for you..." % obj.name)
+            mesh.materials.append(defaultmat)
 
 
         # Calculate the amount of UV Maps
